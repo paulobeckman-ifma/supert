@@ -289,6 +289,7 @@ end $$;
 create or replace function public._pode(u public.usuarios, p_perm text) returns boolean
 language sql stable as
 $$ select u.perfil = 'admin'
+       or p_perm = 'ver'
        or (p_perm = 'editar_turmas' and u.perfil = 'editor')
        or (u.perfil <> 'consulta' and p_perm = any(u.permissoes))
        or (u.perfil = 'consulta' and p_perm in ('painel','turmas','ver')) $$;
