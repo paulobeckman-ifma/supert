@@ -1,5 +1,5 @@
 // Edição e exclusão de um registro de aula (usado no Painel, no Lançar turno e nas Notificações)
-import { $, esc, modal, aviso, confirmar, pedirTexto, fmtData, STATUS } from './util.js';
+import { $, esc, modal, aviso, confirmar, pedirTexto, fmtData, STATUS, opcoesJustificativa } from './util.js';
 import { api, pode, sessao } from './api.js';
 import { D, profsOrdenados, discsDaTurma, turmas } from './dados.js';
 
@@ -15,6 +15,7 @@ export function editarRegistro(r, aoSalvar) {
       <label class="campo"><span>Turma</span><select name="turma">${opTurma}</select></label>
       <label class="campo" style="grid-column:1/-1"><span>Disciplina</span><select name="disciplina_id"></select></label>
       <label class="campo"><span>Status</span><select name="status">${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${k === r.status ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="campo" data-jus style="grid-column:1/-1"><span>Justificativa (não houve aula)</span><select name="justificativa">${opcoesJustificativa(r.justificativa || '')}</select></label>
       <label class="campo"><span>Aulas</span><input type="number" name="aulas" min="0" max="20" value="${esc(r.aulas)}"></label>
       <label class="campo" data-min><span>Minutos (atraso/saída)</span><input type="number" name="minutos" min="0" max="600" step="5" value="${esc(r.minutos ?? '')}"></label>
       <label class="campo"><span>Horário</span><input type="text" name="horario" value="${esc(r.horario || '')}" placeholder="ex.: 07:10"></label>
@@ -30,7 +31,7 @@ export function editarRegistro(r, aoSalvar) {
         selD.innerHTML = `<option value="">(${esc(r.disc || 'sem vínculo')})</option>` + l.map((d) => `<option value="${d.id}" ${d.id === r.disciplina_id ? 'selected' : ''}>${esc(d.nome)}${d.arquivada_em ? ' (arquivada)' : ''}</option>`).join('');
       };
       selT.onchange = encherDisc; encherDisc();
-      const min = () => $('[data-min]', el).classList.toggle('oculto', !['atraso', 'saida'].includes(selS.value));
+      const min = () => { $('[data-min]', el).classList.toggle('oculto', !['atraso', 'saida'].includes(selS.value)); $('[data-jus]', el).classList.toggle('oculto', selS.value !== 'nao'); };
       selS.onchange = min; min();
     },
     botoes: [
@@ -39,10 +40,11 @@ export function editarRegistro(r, aoSalvar) {
       {
         texto: 'Salvar', classe: 'primario', acao: async (fechar, el) => {
           const f = (n) => $(`[name=${n}]`, el).value;
+          if (f('status') === 'nao' && !f('justificativa')) { aviso('Escolha a justificativa de não ter havido aula.', 'erro'); return false; }
           const d = f('disciplina_id') ? D.discs.get(Number(f('disciplina_id'))) : null;
           const p = f('professor_id') ? D.profs.get(Number(f('professor_id'))) : null;
           const reg = {
-            id: r.id, data: f('data'), tipo: f('tipo'), status: f('status'), aulas: Number(f('aulas') || 0),
+            id: r.id, data: f('data'), tipo: f('tipo'), status: f('status'), aulas: f('status') === 'nao' ? 0 : Number(f('aulas') || 0), justificativa: f('status') === 'nao' ? f('justificativa') : '',
             minutos: f('minutos') || null, horario: f('horario'), obs: f('obs'),
             disciplina_id: d?.id || (f('turma') === r.turma ? r.disciplina_id : null), professor_id: p?.id || r.professor_id,
             prof: p?.nome || r.prof, disc: d?.nome || (f('turma') === r.turma ? r.disc : ''), turma: f('turma'),

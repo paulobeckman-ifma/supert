@@ -1,7 +1,7 @@
 // Lançar aulas do turno: todas as aulas previstas no horário já vêm como "presente".
-// O colaborador só marca o que NÃO aconteceu normalmente (falta, atraso, saída ou "não houve aula")
+// O colaborador só marca o que NÃO aconteceu normalmente (falta, atraso, saída ou "não houve aula", esta com justificativa)
 // e lança tudo com um clique.
-import { $, $$, esc, ico, aviso, confirmar, modal, hojeISO, horaAgora, turnoDaHora, dataExtenso, fmtData, semAcento, STATUS, addDias } from './util.js';
+import { $, $$, esc, ico, aviso, confirmar, modal, hojeISO, horaAgora, turnoDaHora, dataExtenso, fmtData, semAcento, STATUS, addDias, opcoesJustificativa } from './util.js';
 import { api, pode } from './api.js';
 import { D, aulasPrevistas, prof, turnosOrdenados } from './dados.js';
 import { editarRegistro } from './regmodal.js';
@@ -87,12 +87,14 @@ function desenhar() {
     $$('[data-s]', row).forEach((b) => (b.onclick = () => {
       const m = est.marcas[k] || (est.marcas[k] = {});
       m.s = b.dataset.s;
+      if (m.s === 'n' && !m.jus && /^SUBS\b/i.test(row.dataset.prof || '')) m.jus = 'Sem professor';
       if ((m.s === 'a' || m.s === 's') && !m.min) m.min = 10;
       desenhar();
-      if (m.s !== 'p') setTimeout(() => $(`.aula[data-k="${k}"] input[data-obs]`)?.focus(), 20);
+      if (m.s !== 'p') setTimeout(() => $(`.aula[data-k="${k}"] ${m.s === 'n' && !m.jus ? 'select[data-jus]' : 'input[data-obs]'}`)?.focus(), 20);
     }));
     const min = $('input[data-min]', row); if (min) min.oninput = () => { est.marcas[k].min = Number(min.value || 0); };
     const obs = $('input[data-obs]', row); if (obs) obs.oninput = () => { est.marcas[k].obs = obs.value; };
+    const jus = $('select[data-jus]', row); if (jus) jus.onchange = () => { est.marcas[k].jus = jus.value; jus.classList.toggle('falta-jus', !jus.value); };
     const au = $('input[data-aulas]', row); if (au) au.oninput = () => { (est.marcas[k] || (est.marcas[k] = { s: 'p' })).aulas = Number(au.value || 0); resumo(); };
     const ed = $('[data-editar]', row); if (ed) ed.onclick = () => { const r = lancados.find((x) => x.id === ed.dataset.editar); if (r) editarRegistro(r, () => carregar(false)); };
   });
@@ -108,7 +110,7 @@ function linha(a) {
     <div class="disc"><span>${esc(a.disc)}</span><small>${esc(a.horario)} · ${a.aulas} aula${a.aulas > 1 ? 's' : ''}</small></div>`;
   if (reg) {
     return `<div class="aula lancado" data-k="${k}">${cabeca}
-      <div class="status-bot"><span class="selo ${reg.status}">${STATUS[reg.status]}${reg.minutos ? ' ' + reg.minutos + ' min' : ''}</span>
+      <div class="status-bot"><span class="selo ${reg.status}">${STATUS[reg.status]}${reg.minutos ? ' ' + reg.minutos + ' min' : ''}${reg.status === 'nao' && reg.justificativa ? ' · ' + esc(reg.justificativa) : ''}</span>
         <span class="selo">lançado por ${esc(reg.por)}</span>
         ${pode('turno') ? `<button data-editar="${reg.id}" title="Corrigir">${ico('editar', 'ico-s')}</button>` : ''}</div></div>`;
   }
@@ -118,9 +120,10 @@ function linha(a) {
   const extra = m.s !== 'p' ? `<div class="aula-extra">
       ${m.s === 'a' || m.s === 's' ? `<label class="linha-flex" style="gap:4px">${m.s === 'a' ? 'Atraso de' : 'Saiu'} <input type="number" data-min min="5" max="300" step="5" value="${m.min || 10}" style="width:70px"> min${m.s === 's' ? ' antes' : ''}</label>` : ''}
       ${m.s !== 'n' ? `<label class="linha-flex" style="gap:4px">Aulas <input type="number" data-aulas min="0" max="10" value="${m.aulas ?? a.aulas}" style="width:60px"></label>` : ''}
-      <input type="text" data-obs maxlength="300" placeholder="${m.s === 'n' ? 'Motivo (ex.: turma liberada, evento, feriado) · não gera registro' : 'Observação (opcional)'}" value="${esc(m.obs || '')}">
+      ${m.s === 'n' ? `<select data-jus class="${m.jus ? '' : 'falta-jus'}" title="Justificativa de não ter havido aula">${opcoesJustificativa(m.jus || '')}</select>` : ''}
+<input type="text" data-obs maxlength="300" placeholder="${m.s === 'n' ? 'Detalhe (opcional)' : 'Observação (opcional)'}" value="${esc(m.obs || '')}">
     </div>` : '';
-  return `<div class="aula ${cls}" data-k="${k}">${cabeca}
+  return `<div class="aula ${cls}" data-k="${k}" data-prof="${esc(a.prof)}">${cabeca}
     <div class="status-bot">${bot('p', 'Presente')}${bot('f', 'Falta')}${bot('a', 'Atraso')}${bot('s', 'Saída')}${bot('n', 'Não houve')}</div>${extra}</div>`;
 }
 
@@ -133,7 +136,7 @@ function resumo() {
   const pend = pendentes();
   const cont = { p: 0, f: 0, a: 0, s: 0, n: 0 };
   pend.forEach(({ m }) => cont[m.s]++);
-  const lancar = pend.filter(({ m }) => m.s !== 'n');
+  const lancar = pend;
   const jaFeitos = previstas.length - pend.length;
   if (!previstas.length) { box.classList.add('oculto'); return; }
   box.classList.remove('oculto');
@@ -153,14 +156,16 @@ function resumo() {
 
 async function lancarTurno() {
   if (!pode('turno')) return aviso('Seu perfil não pode lançar o turno.', 'erro');
-  const pend = pendentes().filter(({ m }) => m.s !== 'n');
+  const pend = pendentes();
+  const semJus = pend.filter(({ m }) => m.s === 'n' && !m.jus);
+  if (semJus.length) { aviso(`Escolha a justificativa de ${semJus.length} aula(s) marcada(s) como "não houve".`, 'erro'); $('select[data-jus].falta-jus')?.focus(); return; }
   const excecoes = pend.filter(({ m }) => m.s !== 'p');
   const nomeTurno = D.turnos[est.turno]?.nome || '';
   const lista = excecoes.length
     ? `<div class="tabela-wrap" style="max-height:260px"><table class="tabela"><thead><tr><th>Turma</th><th>Professor</th><th>Disciplina</th><th>Status</th></tr></thead><tbody>
-        ${excecoes.map(({ a, m }) => `<tr><td class="mono">${esc(a.turma)}</td><td>${esc(a.prof)}</td><td>${esc(a.disc)}</td><td><span class="selo ${ST[m.s]}">${STATUS[ST[m.s]]}${m.min && (m.s === 'a' || m.s === 's') ? ' ' + m.min + ' min' : ''}</span></td></tr>`).join('')}
+        ${excecoes.map(({ a, m }) => `<tr><td class="mono">${esc(a.turma)}</td><td>${esc(a.prof)}</td><td>${esc(a.disc)}</td><td><span class="selo ${ST[m.s]}">${STATUS[ST[m.s]]}${m.min && (m.s === 'a' || m.s === 's') ? ' ' + m.min + ' min' : ''}${m.s === 'n' ? ' · ' + esc(m.jus) : ''}</span></td></tr>`).join('')}
       </tbody></table></div>`
-    : '<div class="caixa ok-caixa">Nenhuma falta, atraso ou saída marcada: todas as aulas entram como presença.</div>';
+    : '<div class="caixa ok-caixa">Nenhuma falta, atraso, saída ou aula não realizada marcada: todas as aulas entram como presença.</div>';
   const ok = await modal({
     titulo: `Lançar ${nomeTurno.toLowerCase()} de ${fmtData(est.data)}`,
     corpo: `<p style="margin:0">Serão lançados <b>${pend.length}</b> registros: <b>${pend.length - excecoes.length}</b> presenças e <b>${excecoes.length}</b> ocorrências.</p>${lista}`,
@@ -168,7 +173,7 @@ async function lancarTurno() {
   }).promessa;
   if (!ok) return;
   const regs = pend.map(({ a, m }) => ({
-    data: est.data, status: ST[m.s], aulas: m.aulas ?? a.aulas, minutos: (m.s === 'a' || m.s === 's') ? (m.min || 10) : null,
+    data: est.data, status: ST[m.s], aulas: m.s === 'n' ? 0 : (m.aulas ?? a.aulas), justificativa: m.s === 'n' ? m.jus : '', minutos: (m.s === 'a' || m.s === 's') ? (m.min || 10) : null,
     horario: a.inicio, obs: m.obs || '', disciplina_id: a.disciplina_id, professor_id: a.professor_id,
     prof: a.prof, disc: a.disc, turma: a.turma, diario_id: a.diario_id, ch_total: a.ch_total
   }));

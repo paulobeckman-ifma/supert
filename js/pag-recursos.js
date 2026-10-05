@@ -9,8 +9,11 @@ const TIPOS = {
   mat: { rot: 'Materiais', um: 'material', c1: 'Nome', c2: 'Descrição', devolve: false }
 };
 const BLOCOS = { lab: '🔬 Laboratórios', b1: '🟦 Bloco 1', b2: '🟩 Bloco 2', b3: '🟨 Bloco 3', b4: '🟫 Bloco 4', outros: '❔ Outras' };
-const EQ = { notebook: 'Notebook', projetor: 'Projetor', caixa_som: 'Caixa de som', microfone: 'Microfone', camera: 'Câmera', controle_tv: 'Controle de TV', outros: 'Outros' };
-const EQ_ICO = { notebook: '💻', projetor: '📽️', caixa_som: '🔊', microfone: '🎤', camera: '📷', controle_tv: '🕹️', outros: '📦' };
+const EQ = { notebook: 'Notebook', projetor: 'Projetor', caixa_som: 'Caixa de som', microfone: 'Microfone', camera: 'Câmera', controle_tv: 'Controle de TV', controle_ar: 'Controle de ar-condicionado', outros: 'Outros' };
+const EQ_ICO = { notebook: '💻', projetor: '📽️', caixa_som: '🔊', microfone: '🎤', camera: '📷', controle_tv: '📺', controle_ar: '❄️', outros: '📦' };
+// Controle remoto desenhado (não existe emoji de controle remoto); usado nos cartões de "Controle de TV".
+const ICO_CONTROLE = '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-.12em"><rect x="7.5" y="2" width="9" height="20" rx="2.5"/><circle cx="12" cy="6.2" r="1.3" fill="currentColor" stroke="none"/><path d="M10 10.5h.01M14 10.5h.01M10 13.5h.01M14 13.5h.01M10 16.5h.01M14 16.5h.01"/><path d="M11 19.2h2"/></svg>';
+const ehAr = (it) => /\bar\b|ar[- ]?cond|condicionad|split|climatiz/i.test(semAcento(`${it.c1 || ''} ${it.c2 || ''}`));
 const LEGADO = { '💻': 'notebook', '📽️': 'projetor', '🔊': 'caixa_som', '🎤': 'microfone', '📷': 'camera', '📹': 'outros', '🖨️': 'outros', '🕹️': 'controle_tv', '🎮': 'controle_tv', '📺': 'controle_tv', '🖥️': 'notebook', '🔌': 'outros', filmadora: 'outros', impressora: 'outros' };
 const BLOCO_ICO = { '🔬': 'lab', '🟦': 'b1', '🟩': 'b2', '🟨': 'b3', '🟫': 'b4' };
 
@@ -30,7 +33,9 @@ async function carregar() {
   try { R = await api('recursos', { p_hist_dias: 45 }); } catch (e) { const c = $('#rc-corpo'); if (c) c.innerHTML = `<div class="caixa erro-caixa">${esc(e.message)}</div>`; return; }
   desenhar();
 }
-const grupo = (it) => it.tipo === 'chaves' ? (it.bloco || BLOCO_ICO[it.icone] || 'outros') : it.tipo === 'equip' ? (EQ[it.icone] ? it.icone : (LEGADO[it.icone] || 'outros')) : 'mat';
+const grupo = (it) => it.tipo === 'chaves' ? (it.bloco || BLOCO_ICO[it.icone] || 'outros') : it.tipo === 'equip' ? grupoEquip(it) : 'mat';
+// Controles de ar-condicionado cadastrados antes como "Controle de TV" passam sozinhos para a categoria própria.
+function grupoEquip(it) { const g = EQ[it.icone] ? it.icone : (LEGADO[it.icone] || 'outros'); return g === 'controle_tv' && ehAr(it) ? 'controle_ar' : g; }
 const emUso = (id) => R.movs.find((m) => m.item_id === id && !m.devolvido_em);
 const ordNum = (a, b) => { const na = parseInt(a.c1), nb = parseInt(b.c1); return !isNaN(na) && !isNaN(nb) ? na - nb : String(a.c1).localeCompare(String(b.c1), 'pt', { numeric: true }); };
 
@@ -48,7 +53,7 @@ function desenhar() {
   const nUso = itens.filter((i) => emUso(i.id)).length;
   const card = (i) => {
     const m = t.devolve ? emUso(i.id) : null; const g = grupo(i);
-    const icone = est.aba === 'chaves' ? '🔑' : est.aba === 'equip' ? (EQ_ICO[g] || '📦') : '📦';
+    const icone = est.aba === 'chaves' ? '🔑' : est.aba === 'equip' ? (g === 'controle_tv' ? ICO_CONTROLE : (EQ_ICO[g] || '📦')) : '📦';
     const dica = m ? `${m.servidor_nome}\nMatrícula: ${m.matricula || '—'}\nRetirada: ${fmtDataHora(m.entregue_em)} (por ${m.entregue_por})` : i.c2;
     return `<button class="rec-card ${m ? 'uso' : ''} ${est.aba === 'chaves' ? 'b-' + g : ''}" data-it="${i.id}" data-dica="${esc(dica)}">
       ${gerir ? `<span class="acao-mini"><span data-edit="${i.id}">✎</span><span data-del="${i.id}">✕</span></span>` : ''}

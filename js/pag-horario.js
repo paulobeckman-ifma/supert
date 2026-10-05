@@ -32,7 +32,9 @@ async function planilha(file) {
   await carregarScript(XLSX_URL);
   const buf = await file.arrayBuffer();
   const wb = window.XLSX.read(buf, { type: 'array' });
-  return window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+  const linhas = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+  // O Google Planilhas exporta espaços não separáveis; viram espaço comum para os nomes quebrarem linha e casarem na busca.
+  return linhas.map((l) => l.map((c) => (typeof c === 'string' ? c.replace(/[\u00a0\u2007\u202f]/g, ' ').replace(/ {2,}/g, ' ') : c)));
 }
 
 // ------------------------------------------------------------------ leitura do horário

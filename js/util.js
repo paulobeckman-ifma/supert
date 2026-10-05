@@ -243,7 +243,10 @@ export function barraProg(feito, total) {
   const cls = p >= 100 ? 'completa' : p >= 70 ? '' : p >= 40 ? 'media' : 'baixa';
   return `<div class="barra-prog ${cls}" data-dica="${feito} de ${total} aulas"><i><b style="width:${Math.min(100, p)}%"></b></i><span>${p}%</span></div>`;
 }
-export const STATUS = { presente: 'Presente', ausente: 'Falta', atraso: 'Atraso', saida: 'Saída antecipada' };
+export const STATUS = { presente: 'Presente', ausente: 'Falta', atraso: 'Atraso', saida: 'Saída antecipada', nao: 'Não houve' };
+/** Justificativas de "não houve aula" (o registro fica guardado com 0 aulas e não gera notificação). */
+export const JUSTIFICATIVAS = ['Sem professor', 'Falta justificada', 'Permuta', 'Reposição ou antecipação', 'Turma liberada', 'Evento institucional', 'Visita técnica ou aula externa', 'Feriado ou ponto facultativo', 'Avaliação ou conselho de classe', 'Outro'];
+export const opcoesJustificativa = (atual = '') => `<option value="">Justificativa…</option>` + [...new Set([...JUSTIFICATIVAS, ...(atual ? [atual] : [])])].map((j) => `<option ${j === atual ? 'selected' : ''}>${j}</option>`).join('');
 export const TIPOS = { regular: 'Regular', extra: 'Extra', permuta: 'Permuta' };
 
 // Dica flutuante: qualquer elemento com data-dica

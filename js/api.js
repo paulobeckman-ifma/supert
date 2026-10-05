@@ -25,6 +25,7 @@ const MSG = {
   JA_EXISTE_REGULAR: 'Já existe aula REGULAR deste professor nesta disciplina e turma neste dia.',
   DATA_OBRIGATORIA: 'Informe a data.',
   STATUS_OBRIGATORIO: 'Escolha o status (presente, falta, atraso ou saída).',
+  JUSTIFICATIVA_OBRIGATORIA: 'Escolha a justificativa de não ter havido aula.',
   DATA_FUTURA: 'Não é possível registrar aula em data futura.',
   JA_RESTAURADO: 'Este registro já foi restaurado.',
   ITEM_EM_USO: 'Não é possível excluir: o item está em uso.',

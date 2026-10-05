@@ -85,7 +85,7 @@ function filtrar() {
     (!est.turma || r.turma === est.turma) &&
     (!est.tipo || r.tipo === est.tipo) &&
     (!q || semAcento(`${r.prof} ${r.disc} ${r.turma} ${r.obs} ${r.por}`).includes(q)));
-  const cont = { presente: 0, ausente: 0, atraso: 0, saida: 0 }; let aulasDadasT = 0, aulasFalta = 0;
+  const cont = { presente: 0, ausente: 0, atraso: 0, saida: 0, nao: 0 }; let aulasDadasT = 0, aulasFalta = 0;
   for (const r of base) { cont[r.status]++; if (r.status === 'ausente') aulasFalta += r.aulas; else aulasDadasT += r.aulas; }
   filtrados = base.filter((r) => !est.status.size || est.status.has(r.status));
   ordenar();
@@ -93,7 +93,7 @@ function filtrar() {
   const card = (s, rot, cls, sub) => `<button class="kpi ${cls} ${est.status.has(s) ? 'ativo' : ''}" data-s="${s}"><span>${rot}</span><b>${cont[s] ?? base.length}</b><small>${sub}</small></button>`;
   k.innerHTML = `<button class="kpi ${!est.status.size ? 'ativo' : ''}" data-s=""><span>Registros</span><b>${base.length}</b><small>${aulasDadasT} aulas dadas</small></button>
     ${card('presente', 'Presenças', 'verde', 'clique para filtrar')}${card('ausente', 'Faltas', 'vermelho', `${aulasFalta} aulas não dadas`)}
-    ${card('atraso', 'Atrasos', 'ambar', 'clique para filtrar')}${card('saida', 'Saídas antecipadas', 'laranja', 'clique para filtrar')}`;
+    ${card('atraso', 'Atrasos', 'ambar', 'clique para filtrar')}${card('saida', 'Saídas antecipadas', 'laranja', 'clique para filtrar')}${card('nao', 'Não houve', 'cinza', 'com justificativa')}`;
   $$('[data-s]', k).forEach((b) => (b.onclick = () => { const s = b.dataset.s; if (!s) est.status.clear(); else est.status.has(s) ? est.status.delete(s) : est.status.add(s); filtrar(); }));
   desenharTabela();
 }
@@ -118,7 +118,7 @@ function desenharTabela() {
       <td class="mono">${fmtData(r.data)}</td><td class="mono">${esc(r.horario || '')}</td>
       <td>${esc(r.prof)}</td><td class="cortar" title="${esc(r.disc)}">${esc(r.disc)}${!r.disciplina_id ? ' <span class="selo ambar" data-dica="Registro sem disciplina vinculada">?</span>' : ''}</td>
       <td class="mono">${esc(r.turma)}</td><td><span class="selo ${r.tipo}">${TIPOS[r.tipo]}</span></td><td class="num">${r.aulas}</td>
-      <td><span class="selo ${r.status}">${STATUS[r.status]}${r.minutos ? ' ' + r.minutos + 'min' : ''}</span></td>
+      <td><span class="selo ${r.status}">${STATUS[r.status]}${r.minutos ? ' ' + r.minutos + 'min' : ''}</span>${r.status === 'nao' && r.justificativa ? `<br><small class="mudo">${esc(r.justificativa)}</small>` : ''}</td>
       <td>${r.disciplina_id ? barraProg(aulasDadas(r.disciplina_id), ch) : '<span class="mudo">—</span>'}</td>
       <td class="cortar mudo" title="${esc(r.obs)}">${esc(r.obs)}</td>
       <td class="mudo pequeno" data-dica="${r.criado_em ? 'Registrado em ' + new Date(r.criado_em).toLocaleString('pt-BR') : ''}">${esc(r.por)}</td>
@@ -139,15 +139,15 @@ function desenharTabela() {
 }
 
 function csv() {
-  baixarCsv(`supert_registros_${est.ini}_${est.fim}`, ['Data', 'Horário', 'Professor', 'Disciplina', 'Turma', 'Diário', 'Tipo', 'Aulas', 'Status', 'Minutos', 'Observação', 'Registrado por', 'Registrado em'],
-    filtrados.map((r) => [fmtData(r.data), r.horario || '', r.prof, r.disc, r.turma, r.diario_id || '', TIPOS[r.tipo], r.aulas, STATUS[r.status], r.minutos || '', r.obs, r.por, r.criado_em ? new Date(r.criado_em).toLocaleString('pt-BR') : '']));
+  baixarCsv(`supert_registros_${est.ini}_${est.fim}`, ['Data', 'Horário', 'Professor', 'Disciplina', 'Turma', 'Diário', 'Tipo', 'Aulas', 'Status', 'Justificativa', 'Minutos', 'Observação', 'Registrado por', 'Registrado em'],
+    filtrados.map((r) => [fmtData(r.data), r.horario || '', r.prof, r.disc, r.turma, r.diario_id || '', TIPOS[r.tipo], r.aulas, STATUS[r.status], r.justificativa || '', r.minutos || '', r.obs, r.por, r.criado_em ? new Date(r.criado_em).toLocaleString('pt-BR') : '']));
 }
 
 function relatorioPdf() {
   if (!filtrados.length) return aviso('Nenhum registro no filtro para gerar o relatório.', 'erro');
   const recs = [...filtrados].sort((a, b) => a.data.localeCompare(b.data) || (a.horario || '').localeCompare(b.horario || ''));
   const profNome = est.prof ? (D.profs.get(Number(est.prof))?.nome_completo || D.profs.get(Number(est.prof))?.nome) : 'Todos os professores';
-  const c = { presente: 0, ausente: 0, atraso: 0, saida: 0 }; let dadas = 0;
+  const c = { presente: 0, ausente: 0, atraso: 0, saida: 0, nao: 0 }; let dadas = 0;
   recs.forEach((r) => { c[r.status]++; if (r.status !== 'ausente') dadas += r.aulas; });
   const porDisc = new Map();
   for (const r of recs) {
@@ -159,8 +159,8 @@ function relatorioPdf() {
     const d = disc(r.disciplina_id); const ch = d?.ch_total || r.ch_total; const total = r.disciplina_id ? aulasDadas(r.disciplina_id) : reg;
     return `<tr><td>${esc(d?.nome || r.disc)}</td><td>${esc(r.turma)}</td><td class="c">${d?.diario_id || r.diario_id || '—'}</td><td class="c">${ch || '—'}</td><td class="c">${reg}</td><td class="c">${falta}</td><td class="c"><b>${total}</b></td><td class="c">${ch ? Math.round(total / ch * 100) + '%' : '—'}</td></tr>`;
   }).join('');
-  const cor = { presente: '#1b5e20', ausente: '#c62828', atraso: '#8a5a00', saida: '#bf360c' };
-  const linhas = recs.map((r) => `<tr><td>${fmtData(r.data)}</td><td>${esc(r.horario || '')}</td><td>${esc(r.prof)}</td><td>${TIPOS[r.tipo]}</td><td>${esc(r.disc)}</td><td>${esc(r.turma)}</td><td class="c">${r.aulas}</td><td style="color:${cor[r.status]};font-weight:700">${STATUS[r.status]}${r.minutos ? ' ' + r.minutos + 'min' : ''}</td><td>${esc(r.obs)}</td></tr>`).join('');
+  const cor = { presente: '#1b5e20', ausente: '#c62828', atraso: '#8a5a00', saida: '#bf360c', nao: '#5f6b67' };
+  const linhas = recs.map((r) => `<tr><td>${fmtData(r.data)}</td><td>${esc(r.horario || '')}</td><td>${esc(r.prof)}</td><td>${TIPOS[r.tipo]}</td><td>${esc(r.disc)}</td><td>${esc(r.turma)}</td><td class="c">${r.aulas}</td><td style="color:${cor[r.status]};font-weight:700">${STATUS[r.status]}${r.minutos ? ' ' + r.minutos + 'min' : ''}${r.status === 'nao' && r.justificativa ? ' · ' + esc(r.justificativa) : ''}</td><td>${esc(r.obs)}</td></tr>`).join('');
   imprimirDoc(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório SUPERT</title><style>
     *{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#1a1a1a;margin:0}
     .top{display:flex;align-items:center;gap:14px;border-bottom:3px solid #1b5e20;padding-bottom:8px;margin-bottom:8px}.top img{height:56px}
