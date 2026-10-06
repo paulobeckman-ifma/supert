@@ -1003,27 +1003,83 @@ begin
            where m.tipo = p_tipo and m.entregue_em::date between coalesce(p_ini, '2000-01-01') and coalesce(p_fim, current_date));
 end $$;
 
--- v2.2: materiais de almoxarifado com foto (data URI reduzida) e quantidade em estoque
+-- v2.3: almoxarifado · estoque na unidade de consumo, embalagem opcional (resma de 500 folhas) e retirada por carrinho
 alter table public.rec_itens add column if not exists foto text not null default '';
 alter table public.rec_itens add column if not exists qtd int;
+alter table public.rec_itens add column if not exists unidade text not null default 'un';
+alter table public.rec_itens add column if not exists emb_nome text not null default '';
+alter table public.rec_itens add column if not exists emb_qtd int;
+alter table public.rec_movs add column if not exists qtd int;
+alter table public.rec_movs add column if not exists pedido text;
+alter table public.rec_movs add column if not exists natureza text not null default 'saida';   -- saida | entrada | ajuste
+
+-- Cadastro do item. A quantidade só entra aqui na criação e só pelo administrador; depois, o estoque muda por mat_estoque e mat_retirar.
 create or replace function public.rec_item_salvar(p_token text, p_dados jsonb) returns jsonb
 language plpgsql security definer set search_path = public as
 $$
 declare eu public.usuarios := public._exige(p_token, 'recursos_gerir'); i public.rec_itens;
 begin
   if nullif(p_dados->>'id','') is null then
-    insert into public.rec_itens(tipo, c1, c2, icone, bloco, foto, qtd)
+    insert into public.rec_itens(tipo, c1, c2, icone, bloco, foto, unidade, emb_nome, emb_qtd, qtd)
     values (p_dados->>'tipo', trim(coalesce(p_dados->>'c1','')), trim(coalesce(p_dados->>'c2','')), coalesce(p_dados->>'icone',''), nullif(p_dados->>'bloco',''),
-            coalesce(p_dados->>'foto',''), nullif(p_dados->>'qtd','')::int)
+            coalesce(p_dados->>'foto',''), coalesce(nullif(trim(p_dados->>'unidade'),''),'un'), coalesce(trim(p_dados->>'emb_nome'),''),
+            case when nullif(p_dados->>'emb_qtd','')::int > 1 then (p_dados->>'emb_qtd')::int end,
+            case when p_dados->>'tipo' = 'mat' then (case when eu.perfil = 'admin' then greatest(coalesce(nullif(p_dados->>'qtd','')::int, 0), 0) else 0 end) end)
     returning * into i;
   else
     update public.rec_itens set c1 = trim(coalesce(p_dados->>'c1', c1)), c2 = trim(coalesce(p_dados->>'c2', c2)),
       icone = coalesce(p_dados->>'icone', icone), bloco = case when p_dados ? 'bloco' then nullif(p_dados->>'bloco','') else bloco end,
       foto = case when p_dados ? 'foto' then coalesce(p_dados->>'foto','') else foto end,
-      qtd = case when p_dados ? 'qtd' then nullif(p_dados->>'qtd','')::int else qtd end
+      unidade = case when p_dados ? 'unidade' then coalesce(nullif(trim(p_dados->>'unidade'),''),'un') else unidade end,
+      emb_nome = case when p_dados ? 'emb_nome' then coalesce(trim(p_dados->>'emb_nome'),'') else emb_nome end,
+      emb_qtd = case when p_dados ? 'emb_qtd' then (case when nullif(p_dados->>'emb_qtd','')::int > 1 then (p_dados->>'emb_qtd')::int end) else emb_qtd end
      where id = p_dados->>'id' returning * into i;
   end if;
   return to_jsonb(i);
+end $$;
+
+-- Retirada por carrinho: p_itens = [{id, qtd}] com qtd na unidade de consumo. Ou sai tudo, ou não sai nada.
+create or replace function public.mat_retirar(p_token text, p_itens jsonb, p_matricula text, p_nome text) returns jsonb
+language plpgsql security definer set search_path = public as
+$$
+declare
+  eu public.usuarios := public._exige(p_token, 'recursos'); x jsonb; it public.rec_itens; v_q int; n int := 0;
+  v_nome text := trim(coalesce(p_nome,'')); v_mat text := trim(coalesce(p_matricula,'')); v_ped text := replace(gen_random_uuid()::text, '-', '');
+begin
+  if v_nome = '' then raise exception 'NOME_OBRIGATORIO'; end if;
+  if jsonb_typeof(p_itens) is distinct from 'array' or jsonb_array_length(p_itens) = 0 then raise exception 'QTD_INVALIDA'; end if;
+  if v_mat <> '' and not exists(select 1 from public.servidores where matricula = v_mat) then
+    insert into public.servidores(nome, matricula) values (v_nome, v_mat);
+  end if;
+  for x in select * from jsonb_array_elements(p_itens) loop
+    v_q := nullif(x->>'qtd','')::int;
+    if v_q is null or v_q <= 0 then raise exception 'QTD_INVALIDA'; end if;
+    select * into it from public.rec_itens where id = x->>'id' and tipo = 'mat' and ativo for update;
+    if it.id is null then raise exception 'NAO_ENCONTRADO'; end if;
+    if coalesce(it.qtd, 0) < v_q then raise exception 'SEM_ESTOQUE: %', it.c1; end if;
+    update public.rec_itens set qtd = qtd - v_q where id = it.id;
+    insert into public.rec_movs(tipo, item_id, matricula, servidor_nome, entregue_por, devolvido_em, qtd, pedido, natureza)
+    values ('mat', it.id, v_mat, v_nome, eu.login, now(), v_q, v_ped, 'saida');
+    n := n + 1;
+  end loop;
+  return jsonb_build_object('pedido', v_ped, 'itens', n);
+end $$;
+
+-- Entrada de material ou correção de contagem: só o administrador. p_delta na unidade de consumo (negativo para baixa).
+create or replace function public.mat_estoque(p_token text, p_id text, p_delta int, p_natureza text default 'entrada', p_obs text default '') returns jsonb
+language plpgsql security definer set search_path = public as
+$$
+declare eu public.usuarios := public._exige(p_token, 'admin'); it public.rec_itens; v_nat text := case when p_natureza = 'entrada' and p_delta > 0 then 'entrada' else 'ajuste' end;
+begin
+  if p_delta is null or p_delta = 0 then raise exception 'QTD_INVALIDA'; end if;
+  select * into it from public.rec_itens where id = p_id and tipo = 'mat' and ativo for update;
+  if it.id is null then raise exception 'NAO_ENCONTRADO'; end if;
+  if coalesce(it.qtd, 0) + p_delta < 0 then raise exception 'SEM_ESTOQUE: %', it.c1; end if;
+  update public.rec_itens set qtd = coalesce(qtd, 0) + p_delta where id = p_id returning * into it;
+  insert into public.rec_movs(tipo, item_id, servidor_nome, entregue_por, devolvido_em, qtd, natureza, obs)
+  values ('mat', p_id, '', eu.login, now(), p_delta, v_nat, trim(coalesce(p_obs,'')));
+  perform public._log(eu.login, 'estoque', format('%s: %s%s (%s). Saldo: %s', it.c1, case when p_delta > 0 then '+' else '' end, p_delta, v_nat, it.qtd));
+  return to_jsonb(it);
 end $$;
 
 create or replace function public.rec_item_excluir(p_token text, p_id text) returns void
