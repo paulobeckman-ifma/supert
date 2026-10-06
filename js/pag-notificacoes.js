@@ -45,11 +45,33 @@ async function carregarAusencias() {
     const regs = await api('registros_listar', { p_f: { ini: est.ini, fim: est.fim, professor_id: est.prof, status: 'ausente', limite: 3000 } });
     const l = regs.filter((r) => !!r.notif_arquivada === est.arquivadas);
     if (!l.length) { box.innerHTML = `<div class="vazio">Nenhuma ausência ${est.arquivadas ? 'arquivada ' : ''}no período.</div>`; return; }
-    box.innerHTML = `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Data</th><th>Professor</th><th>Disciplina</th><th>Turma</th><th>Aulas</th><th>Obs.</th><th></th></tr></thead><tbody>
-      ${l.map((r) => `<tr><td class="mono">${fmtData(r.data)}</td><td>${esc(r.prof)}</td><td>${esc(r.disc)}</td><td class="mono">${esc(r.turma)}</td><td class="num">${r.aulas}</td><td class="mudo cortar">${esc(r.obs)}</td>
+    box.innerHTML = `<div class="linha-flex lote-barra"><span id="n-sel-n" class="mudo pequeno">Marque as linhas para ${est.arquivadas ? 'desarquivar' : 'arquivar'} várias de uma vez.</span><span class="espaco"></span>
+        <button class="btn pequeno primario" id="n-lote" disabled>${ico('arquivo')} ${est.arquivadas ? 'Desarquivar' : 'Arquivar'} selecionadas</button></div>
+      <div class="tabela-wrap"><table class="tabela"><thead><tr><th style="width:30px"><input type="checkbox" id="n-todas" title="Selecionar todas"></th><th>Data</th><th>Professor</th><th>Disciplina</th><th>Turma</th><th>Aulas</th><th>Obs.</th><th></th></tr></thead><tbody>
+      ${l.map((r) => `<tr><td><input type="checkbox" data-sel="${r.id}"></td><td class="mono">${fmtData(r.data)}</td><td>${esc(r.prof)}</td><td>${esc(r.disc)}</td><td class="mono">${esc(r.turma)}</td><td class="num">${r.aulas}</td><td class="mudo cortar">${esc(r.obs)}</td>
         <td class="acoes"><button class="btn pequeno primario" data-pdf="${r.id}">${ico('imprimir')} Notificação</button>
         <button class="btn pequeno" data-arq="${r.id}" title="${est.arquivadas ? 'Desarquivar' : 'Arquivar (já notificada ou justificada)'}">${ico('arquivo')}</button></td></tr>`).join('')}</tbody></table></div>`;
     $$('[data-pdf]', box).forEach((b) => (b.onclick = () => notifAusencia(l.find((r) => r.id === b.dataset.pdf))));
+    const marcados = () => $$('[data-sel]', box).filter((c) => c.checked);
+    const atualizar = () => {
+      const n = marcados().length; const tot = $$('[data-sel]', box).length;
+      $('#n-lote').disabled = !n; $('#n-sel-n').textContent = n ? `${n} de ${tot} selecionada${n > 1 ? 's' : ''}` : `Marque as linhas para ${est.arquivadas ? 'desarquivar' : 'arquivar'} várias de uma vez.`;
+      const t = $('#n-todas'); t.checked = n > 0 && n === tot; t.indeterminate = n > 0 && n < tot;
+    };
+    let ultimo = null;
+    $$('[data-sel]', box).forEach((c, i, todos) => (c.onclick = (e) => {
+      if (e.shiftKey && ultimo != null) { const [a, b] = [Math.min(ultimo, i), Math.max(ultimo, i)]; for (let k = a; k <= b; k++) todos[k].checked = c.checked; }
+      ultimo = i; atualizar();
+    }));
+    $('#n-todas').onchange = (e) => { $$('[data-sel]', box).forEach((c) => (c.checked = e.target.checked)); atualizar(); };
+    $('#n-lote').onclick = async () => {
+      const ids = marcados().map((c) => c.dataset.sel); if (!ids.length) return;
+      const b = $('#n-lote'); b.disabled = true; let ok = 0;
+      try { for (const id of ids) { b.textContent = `${ok + 1} de ${ids.length}…`; await api('registro_arquivar_notif', { p_id: id, p_arquivar: !est.arquivadas }); ok++; } }
+      catch (e) { aviso(`${ok} de ${ids.length} concluída(s). ${e.message}`, 'erro'); }
+      if (ok === ids.length) aviso(`${ok} notificaç${ok > 1 ? 'ões' : 'ão'} ${est.arquivadas ? 'desarquivada' : 'arquivada'}${ok > 1 ? 's' : ''}.`, 'ok');
+      carregarAusencias();
+    };
     $$('[data-arq]', box).forEach((b) => (b.onclick = async () => { try { await api('registro_arquivar_notif', { p_id: b.dataset.arq, p_arquivar: !est.arquivadas }); carregarAusencias(); } catch (e) { aviso(e.message, 'erro'); } }));
   } catch (e) { box.innerHTML = `<div class="caixa erro-caixa">${esc(e.message)}</div>`; }
 }
