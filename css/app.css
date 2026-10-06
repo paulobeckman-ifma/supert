@@ -326,6 +326,16 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .lote-barra { margin-bottom: 8px; align-items: center; min-height: 32px; }
 .hist-filtro { gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; font-size: 13px; }
 .hist-filtro input[type=date] { width: auto; padding: 4px 6px; font-size: 13px; }
+.rec-direita { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.rec-card.mat.no-carrinho { border-color: var(--verde); box-shadow: 0 0 0 2px var(--verde-claro); }
+.rec-card.mat .car { display: inline-block; margin: 6px 0 0 4px; font-size: 11px; font-weight: 700; color: var(--verde-escuro); }
+.car-lista { display: grid; gap: 6px; max-height: 46vh; overflow: auto; }
+.car-linha { display: grid; grid-template-columns: 40px minmax(0, 1fr) 74px auto 30px; gap: 8px; align-items: center; padding: 6px; border: 1px solid var(--linha); border-radius: 8px; background: #fff; }
+.car-linha.erro { border-color: var(--vermelho); background: var(--vermelho-claro); }
+.car-linha.erro small { color: var(--vermelho); font-weight: 700; }
+.car-nome { min-width: 0; } .car-nome b { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .car-nome small { display: block; font-size: 11.5px; }
+.car-linha input[type=number] { width: 100%; padding: 5px 6px; text-align: right; } .car-linha select { width: auto; padding: 5px 6px; font-size: 12.5px; } .car-un { min-width: 34px; }
+.foto-prev.pequena { width: 40px; height: 40px; font-size: 20px; }
 .rec-grid.mat { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .rec-card.mat { background: #fff; border-color: var(--linha); color: var(--tinta); padding: 8px 8px 9px; min-height: 0; }
 .rec-card.mat .foto { display: flex; align-items: center; justify-content: center; height: 110px; font-size: 40px; margin-bottom: 6px; }
