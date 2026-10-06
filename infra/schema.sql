@@ -112,7 +112,7 @@ create table if not exists public.registros (
   id              text primary key default replace(gen_random_uuid()::text, '-', ''),
   data            date not null,
   tipo            text not null default 'regular' check (tipo in ('regular','extra','permuta')),
-  status          text not null check (status in ('presente','ausente','atraso','saida')),
+  status          text not null check (status in ('presente','ausente','atraso','saida','nao')),   -- nao = não houve aula (0 aulas, com justificativa)
   aulas           int not null default 1 check (aulas between 0 and 20),
   minutos         int,
   horario         text,
@@ -132,6 +132,10 @@ create table if not exists public.registros (
   atualizado_em   timestamptz,
   atualizado_por  text
 );
+-- v2.1: "não houve aula" passa a ser registro, com justificativa (bancos criados antes recebem a coluna e a regra aqui).
+alter table public.registros add column if not exists justificativa text not null default '';
+alter table public.registros drop constraint if exists registros_status_check;
+alter table public.registros add constraint registros_status_check check (status in ('presente','ausente','atraso','saida','nao'));
 create index if not exists registros_data on public.registros(data);
 create index if not exists registros_disc on public.registros(disciplina_id);
 create index if not exists registros_prof on public.registros(professor_id);
@@ -322,7 +326,7 @@ $$ select coalesce(jsonb_object_agg(disciplina_id, total), '{}'::jsonb) from (
 create or replace function public._registro_json(r public.registros) returns jsonb
 language sql stable as
 $$ select jsonb_build_object('id', r.id, 'data', r.data, 'tipo', r.tipo, 'status', r.status, 'aulas', r.aulas,
-     'minutos', r.minutos, 'horario', r.horario, 'obs', r.obs, 'disciplina_id', r.disciplina_id,
+     'minutos', r.minutos, 'horario', r.horario, 'obs', r.obs, 'justificativa', r.justificativa, 'disciplina_id', r.disciplina_id,
      'professor_id', r.professor_id, 'prof', r.prof_nome, 'disc', r.disc_nome, 'turma', r.turma,
      'diario_id', r.diario_id, 'ch_total', r.ch_total, 'por', r.registrado_por, 'lote', r.lote,
      'origem', r.origem, 'notif_arquivada', r.notif_arquivada, 'criado_em', r.criado_em,
@@ -815,7 +819,8 @@ begin
   r.data := (j->>'data')::date;
   r.tipo := coalesce(nullif(j->>'tipo',''), 'regular');
   r.status := j->>'status';
-  r.aulas := coalesce(nullif(j->>'aulas','')::int, 1);
+  r.aulas := case when j->>'status' = 'nao' then 0 else coalesce(nullif(j->>'aulas','')::int, 1) end;
+  r.justificativa := case when j->>'status' = 'nao' then trim(coalesce(j->>'justificativa','')) else '' end;
   r.minutos := case when j->>'status' in ('atraso','saida') then nullif(j->>'minutos','')::int end;
   r.horario := nullif(j->>'horario','');
   r.obs := coalesce(j->>'obs','');
@@ -833,6 +838,7 @@ begin
   r.criado_em := now();
   if r.data is null then raise exception 'DATA_OBRIGATORIA'; end if;
   if r.status is null then raise exception 'STATUS_OBRIGATORIO'; end if;
+  if r.status = 'nao' and r.justificativa = '' then raise exception 'JUSTIFICATIVA_OBRIGATORIA'; end if;
   if r.data > current_date + 1 then raise exception 'DATA_FUTURA'; end if;
   return r;
 end $$;
@@ -874,7 +880,7 @@ begin
     perform public._log(eu.login, 'insert', format('Prof: %s | %s | Turma: %s | %s aula(s) | %s | %s', r.prof_nome, r.disc_nome, r.turma, r.aulas, r.status, to_char(r.data,'DD/MM/YYYY')));
   else
     update public.registros set data = r.data, tipo = r.tipo, status = r.status, aulas = r.aulas, minutos = r.minutos, horario = r.horario,
-      obs = r.obs, disciplina_id = r.disciplina_id, professor_id = r.professor_id, prof_nome = r.prof_nome, disc_nome = r.disc_nome,
+      obs = r.obs, justificativa = r.justificativa, disciplina_id = r.disciplina_id, professor_id = r.professor_id, prof_nome = r.prof_nome, disc_nome = r.disc_nome,
       turma = r.turma, diario_id = r.diario_id, ch_total = r.ch_total, atualizado_em = now(), atualizado_por = eu.login
      where id = r.id;
     perform public._log(eu.login, 'edit', format('Registro editado: %s | %s | %s', r.prof_nome, r.disc_nome, to_char(r.data,'DD/MM/YYYY')), to_jsonb(v_old));
@@ -900,7 +906,7 @@ begin
     end if;
     insert into public.registros select r.*;
     n_ok := n_ok + 1;
-    if r.status <> 'presente' then n_falta := n_falta + 1; end if;
+    if r.status not in ('presente','nao') then n_falta := n_falta + 1; end if;
   end loop;
   if n_ok > 0 then
     perform public._log(eu.login, 'turno', format('Lançamento do turno: %s registro(s) em %s, %s com falta/atraso/saída', n_ok,
