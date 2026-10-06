@@ -185,7 +185,7 @@ export function modal({ titulo, corpo = '', botoes = [], largo = false, aoAbrir,
   if (fecharFora) fundo.addEventListener('mousedown', (e) => { if (e.target === fundo) fechar(null); });
   document.body.appendChild(fundo);
   if (aoAbrir) aoAbrir(fundo, fechar);
-  const primeiro = fundo.querySelector('[autofocus], input:not([type=hidden]):not([type=checkbox]), select, textarea'); if (primeiro) setTimeout(() => primeiro.focus(), 30);
+  const primeiro = fundo.querySelector('[autofocus]') || fundo.querySelector('input:not([type=hidden]):not([type=checkbox]), select, textarea'); if (primeiro) setTimeout(() => primeiro.focus(), 30);
   return { el: fundo, fechar, promessa };
 }
 export function confirmar(texto, { titulo = 'Confirmar', ok = 'Confirmar', perigo = false } = {}) {

@@ -297,7 +297,7 @@ function retirar(item) {
           lista.classList.remove('oculto');
           $$('[data-add]', lista).forEach((b) => (b.onmousedown = (e) => { e.preventDefault(); escolhidos.push(R.itens.find((i) => i.id === b.dataset.add)); mais.value = ''; lista.classList.add('oculto'); desenharSel(); }));
         };
-        mais.onfocus = mais.oninput; mais.onblur = () => setTimeout(() => lista.classList.add('oculto'), 150);
+        mais.onclick = mais.oninput; mais.onblur = () => setTimeout(() => lista.classList.add('oculto'), 150);
       }
       const mat = $('#rt-mat', el);
       mat.oninput = () => { const n = buscaServidor(mat.value); $('#rt-nome', el).textContent = n ? '✓ ' + n : ''; $('#rt-manual', el).classList.toggle('oculto', !!n || mat.value.trim().length < 4); };
