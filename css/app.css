@@ -323,6 +323,7 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .rec-card.b-b4 { background: #efebe9; border-color: #a1887f; color: #3e2723; }
 .rec-card.b-outros { background: #eceff1; border-color: #90a4ae; color: #37474f; }
 .rec-card.uso.b-lab, .rec-card.uso.b-b1, .rec-card.uso.b-b2, .rec-card.uso.b-b3, .rec-card.uso.b-b4, .rec-card.uso.b-outros { background: #ffebee; border: 3px solid var(--vermelho); color: #7f0000; }
+.lote-barra { margin-bottom: 8px; align-items: center; min-height: 32px; }
 .hist-filtro { gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; font-size: 13px; }
 .hist-filtro input[type=date] { width: auto; padding: 4px 6px; font-size: 13px; }
 .rec-grid.mat { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
