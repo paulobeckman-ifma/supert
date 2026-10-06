@@ -149,9 +149,40 @@ function resumo() {
     <div class="item"><span class="n">${cont.n}</span>não houve</div>
     <span class="espaco"></span>
     ${pend.length ? `<button class="btn fantasma" style="color:#cfe0db" id="t-limpar">Desfazer marcações</button>` : ''}
+    ${pend.length && pode('turno') ? `<button class="btn grande" id="t-sem-aula" title="Lança todas as aulas pendentes deste turno como 'não houve', com a mesma justificativa">Não houve aula no turno</button>` : ''}
     <button class="btn primario grande" id="t-lancar" ${lancar.length ? '' : 'disabled'}>${ico('check')} ${lancar.length ? `Lançar ${lancar.length} aula${lancar.length > 1 ? 's' : ''} do turno` : 'Turno todo lançado'}</button>`;
   const lim = $('#t-limpar'); if (lim) lim.onclick = () => { est.marcas = {}; desenhar(); };
   const b = $('#t-lancar'); if (b) b.onclick = lancarTurno;
+  const sa = $('#t-sem-aula'); if (sa) sa.onclick = semAulaNoTurno;
+}
+
+// Turno inteiro sem aula (feriado, evento, paralisação…): todas as pendentes viram "não houve" com a mesma justificativa.
+async function semAulaNoTurno() {
+  if (!pode('turno')) return aviso('Seu perfil não pode lançar o turno.', 'erro');
+  const pend = pendentes(); if (!pend.length) return;
+  const nomeTurno = (D.turnos[est.turno]?.nome || '').toLowerCase();
+  const r = await modal({
+    titulo: `Não houve aula no ${nomeTurno} de ${fmtData(est.data)}`,
+    corpo: `<p style="margin:0 0 10px">As <b>${pend.length}</b> aulas ainda não lançadas deste turno serão registradas como <b>não houve</b>, com 0 aulas e sem gerar notificação de falta.</p>
+      <label class="campo"><span>Justificativa (vale para todas)</span><select name="jus">${opcoesJustificativa('')}</select></label>
+      <label class="campo"><span>Detalhe (opcional)</span><input type="text" name="obs" maxlength="300" placeholder="ex.: ponto facultativo, jogos internos, falta de energia"></label>`,
+    botoes: [{ texto: 'Voltar', valor: null }, { texto: `${ico('check')} Lançar ${pend.length} como não houve`, classe: 'primario', acao: (fechar, el) => {
+      const jus = $('[name=jus]', el).value; if (!jus) { aviso('Escolha a justificativa.', 'erro'); return false; }
+      fechar({ jus, obs: $('[name=obs]', el).value.trim() }); return false;
+    } }]
+  }).promessa;
+  if (!r) return;
+  const regs = pend.map(({ a }) => ({
+    data: est.data, status: 'nao', aulas: 0, justificativa: r.jus, minutos: null, horario: a.inicio, obs: r.obs,
+    disciplina_id: a.disciplina_id, professor_id: a.professor_id, prof: a.prof, disc: a.disc, turma: a.turma, diario_id: a.diario_id, ch_total: a.ch_total
+  }));
+  const b = $('#t-sem-aula'); if (b) { b.disabled = true; b.textContent = 'Lançando…'; }
+  try {
+    const res = await api('registros_lancar', { p_regs: regs }, { timeout: 60000 });
+    aviso(`${res.lancados} aula(s) registrada(s) como não houve.${res.pulados ? ` ${res.pulados} já estavam registradas e foram mantidas.` : ''}`, 'ok');
+    est.marcas = {};
+    await carregar(false);
+  } catch (e) { aviso(e.message, 'erro'); resumo(); }
 }
 
 async function lancarTurno() {

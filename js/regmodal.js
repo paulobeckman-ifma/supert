@@ -3,6 +3,9 @@ import { $, esc, modal, aviso, confirmar, pedirTexto, fmtData, STATUS, opcoesJus
 import { api, pode, sessao } from './api.js';
 import { D, profsOrdenados, discsDaTurma, turmas } from './dados.js';
 
+/** Administradores e editores excluem na hora (fica no log para restaurar); os demais perfis geram um pedido. */
+const excluiDireto = () => ['admin', 'editor'].includes(sessao.usuario?.perfil);
+
 export function editarRegistro(r, aoSalvar) {
   const opProf = profsOrdenados({ soAtivos: false }).map((p) => `<option value="${p.id}" ${p.id === r.professor_id ? 'selected' : ''}>${esc(p.nome)}${p.ativo ? '' : ' (inativo)'}</option>`).join('');
   const listaT = turmas({ incluirArquivadas: true });
@@ -35,7 +38,7 @@ export function editarRegistro(r, aoSalvar) {
       selS.onchange = min; min();
     },
     botoes: [
-      ...(pode('turno') || pode('registrar') ? [{ texto: pode('admin') ? 'Excluir' : 'Pedir exclusão', classe: 'perigo', acao: async (fechar) => { const ok = await excluirRegistro(r); if (ok) { fechar(true); aoSalvar?.(); } return false; } }] : []),
+      ...(pode('turno') || pode('registrar') ? [{ texto: excluiDireto() ? 'Excluir' : 'Pedir exclusão', classe: 'perigo', acao: async (fechar) => { const ok = await excluirRegistro(r); if (ok) { fechar(true); aoSalvar?.(); } return false; } }] : []),
       { texto: 'Cancelar', valor: null },
       {
         texto: 'Salvar', classe: 'primario', acao: async (fechar, el) => {
@@ -61,7 +64,7 @@ export function editarRegistro(r, aoSalvar) {
 
 export async function excluirRegistro(r) {
   const desc = `${r.prof} · ${r.disc} · ${r.turma} · ${fmtData(r.data)} · ${STATUS[r.status] || r.status}`;
-  if (pode('admin')) {
+  if (excluiDireto()) {
     if (!await confirmar(`Excluir este registro?\n\n${desc}\n\nEle fica guardado no log e pode ser restaurado.`, { titulo: 'Excluir registro', ok: 'Excluir', perigo: true })) return false;
     await api('registro_excluir', { p_id: r.id, p_motivo: '' });
     aviso('Registro excluído.', 'ok'); return true;
