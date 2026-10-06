@@ -1003,18 +1003,24 @@ begin
            where m.tipo = p_tipo and m.entregue_em::date between coalesce(p_ini, '2000-01-01') and coalesce(p_fim, current_date));
 end $$;
 
+-- v2.2: materiais de almoxarifado com foto (data URI reduzida) e quantidade em estoque
+alter table public.rec_itens add column if not exists foto text not null default '';
+alter table public.rec_itens add column if not exists qtd int;
 create or replace function public.rec_item_salvar(p_token text, p_dados jsonb) returns jsonb
 language plpgsql security definer set search_path = public as
 $$
 declare eu public.usuarios := public._exige(p_token, 'recursos_gerir'); i public.rec_itens;
 begin
   if nullif(p_dados->>'id','') is null then
-    insert into public.rec_itens(tipo, c1, c2, icone, bloco)
-    values (p_dados->>'tipo', trim(coalesce(p_dados->>'c1','')), trim(coalesce(p_dados->>'c2','')), coalesce(p_dados->>'icone',''), nullif(p_dados->>'bloco',''))
+    insert into public.rec_itens(tipo, c1, c2, icone, bloco, foto, qtd)
+    values (p_dados->>'tipo', trim(coalesce(p_dados->>'c1','')), trim(coalesce(p_dados->>'c2','')), coalesce(p_dados->>'icone',''), nullif(p_dados->>'bloco',''),
+            coalesce(p_dados->>'foto',''), nullif(p_dados->>'qtd','')::int)
     returning * into i;
   else
     update public.rec_itens set c1 = trim(coalesce(p_dados->>'c1', c1)), c2 = trim(coalesce(p_dados->>'c2', c2)),
-      icone = coalesce(p_dados->>'icone', icone), bloco = case when p_dados ? 'bloco' then nullif(p_dados->>'bloco','') else bloco end
+      icone = coalesce(p_dados->>'icone', icone), bloco = case when p_dados ? 'bloco' then nullif(p_dados->>'bloco','') else bloco end,
+      foto = case when p_dados ? 'foto' then coalesce(p_dados->>'foto','') else foto end,
+      qtd = case when p_dados ? 'qtd' then nullif(p_dados->>'qtd','')::int else qtd end
      where id = p_dados->>'id' returning * into i;
   end if;
   return to_jsonb(i);
