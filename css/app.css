@@ -222,6 +222,9 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .resumo-turno .item.atraso .n { color: #ffd54f; }
 .resumo-turno .btn.primario { background: #43a047; border-color: #43a047; }
 .bloco-hora { margin-top: 14px; }
+.bloco-hora > h3 .espaco { flex: 1; }
+.acoes-hora { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-left: 6px; text-transform: none; letter-spacing: 0; }
+.bloco-hora > h3 .selo.verde { text-transform: none; letter-spacing: 0; }
 .bloco-hora > h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--tinta-3); margin: 0 0 6px 2px; display: flex; gap: 8px; align-items: center; }
 .linhas-aula { display: grid; gap: 6px; }
 .aula { display: grid; grid-template-columns: 76px minmax(160px, 1.3fr) minmax(160px, 1.6fr) auto; gap: 10px; align-items: center;
