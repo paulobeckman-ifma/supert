@@ -915,7 +915,7 @@ begin
   return jsonb_build_object('lote', v_lote, 'lancados', n_ok, 'pulados', n_pulado, 'lista_pulados', pulados);
 end $$;
 
--- Exclusão: admin exclui na hora (fica no log para restaurar); os demais geram um pedido.
+-- Exclusão: admin e editor excluem na hora (fica no log para restaurar); os demais geram um pedido.
 create or replace function public.registro_excluir(p_token text, p_id text, p_motivo text default '') returns jsonb
 language plpgsql security definer set search_path = public as
 $$
@@ -923,7 +923,7 @@ declare eu public.usuarios := public._sessao(p_token); r public.registros;
 begin
   select * into r from public.registros where id = p_id;
   if r.id is null then raise exception 'NAO_ENCONTRADO'; end if;
-  if eu.perfil = 'admin' then
+  if eu.perfil in ('admin','editor') then   -- v2.2: editores também excluem sem pedir autorização
     delete from public.registros where id = p_id;
     perform public._log(eu.login, 'delete', format('Prof: %s | %s | Turma: %s | %s aula(s) | %s | %s', r.prof_nome, r.disc_nome, r.turma, r.aulas, r.status, to_char(r.data,'DD/MM/YYYY')), to_jsonb(r));
     return jsonb_build_object('excluido', true);
