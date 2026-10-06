@@ -18,6 +18,18 @@ const LEGADO = { '💻': 'notebook', '📽️': 'projetor', '🔊': 'caixa_som',
 const BLOCO_ICO = { '🔬': 'lab', '🟦': 'b1', '🟩': 'b2', '🟨': 'b3', '🟫': 'b4' };
 
 let est = { aba: 'chaves', filtro: new Set(), busca: '' };
+// Estoque de materiais: visão (cartões ou lista) e ordenação ficam guardadas neste navegador.
+const prefMat = (() => { try { return { visao: 'cartoes', ordem: 'az', ...JSON.parse(localStorage.getItem('supert2_mat') || '{}') }; } catch { return { visao: 'cartoes', ordem: 'az' }; } })();
+const salvarPrefMat = () => { try { localStorage.setItem('supert2_mat', JSON.stringify(prefMat)); } catch { /* sem armazenamento: vale só nesta sessão */ } };
+const ORDENS_MAT = { az: 'Nome (A–Z)', za: 'Nome (Z–A)', maior: 'Maior estoque primeiro', menor: 'Menor estoque primeiro', zerados: 'Sem estoque primeiro' };
+// Para comparar papel (em folhas) com itens em unidades, o estoque é medido em embalagens quando o item tem embalagem.
+const nivelEstoque = (i) => (i.qtd == null ? -1 : i.qtd / (Number(i.emb_qtd) > 1 ? i.emb_qtd : 1));
+function ordenarMat(l) {
+  const nome = (a, b) => semAcento(a.c1).localeCompare(semAcento(b.c1), 'pt-BR', { numeric: true });
+  const f = { az: nome, za: (a, b) => nome(b, a), maior: (a, b) => nivelEstoque(b) - nivelEstoque(a) || nome(a, b), menor: (a, b) => nivelEstoque(a) - nivelEstoque(b) || nome(a, b),
+    zerados: (a, b) => (nivelEstoque(a) > 0) - (nivelEstoque(b) > 0) || nome(a, b) }[prefMat.ordem] || nome;
+  return [...l].sort(f);
+}
 let R = { itens: [], movs: [], servidores: [] };
 
 export async function render(el, { cabecalho }) {
@@ -49,7 +61,8 @@ function desenhar() {
   const gerir = pode('recursos_gerir');
   const grupos = est.aba === 'chaves' ? BLOCOS : est.aba === 'equip' ? EQ : { mat: 'Materiais' };
   const cont = {}; itens.forEach((i) => { const g = grupo(i); cont[g] = (cont[g] || 0) + 1; });
-  const vis = itens.filter((i) => (!est.filtro.size || est.filtro.has(grupo(i))) && (!q || semAcento(`${i.c1} ${i.c2} ${emUso(i.id)?.servidor_nome || ''}`).includes(q)));
+  let vis = itens.filter((i) => (!est.filtro.size || est.filtro.has(grupo(i))) && (!q || semAcento(`${i.c1} ${i.c2} ${emUso(i.id)?.servidor_nome || ''}`).includes(q)));
+  if (est.aba === 'mat') vis = ordenarMat(vis);
   const nUso = itens.filter((i) => emUso(i.id)).length;
   const card = (i) => {
     const m = t.devolve ? emUso(i.id) : null; const g = grupo(i);
@@ -66,10 +79,24 @@ function desenhar() {
       ${gerir ? `<span class="acao-mini"><span data-edit="${i.id}">✎</span><span data-del="${i.id}">✕</span></span>` : ''}
       <span class="ic">${icone}</span><span class="n">${esc(i.c1) || '—'}</span><span class="d">${esc(i.c2)}</span>${m ? `<span class="w">${esc((m.servidor_nome || m.matricula).split(' ')[0])}</span>` : ''}</button>`;
   };
-  const secoes = est.aba === 'mat' ? `<div class="rec-grid mat">${vis.map(card).join('')}</div>`
+  const linhaMat = (i) => {
+    const q = i.qtd; const baixo = q != null && q <= 0; const noCar = carrinho.has(i.id);
+    return `<tr class="${baixo ? 'zerado' : ''} ${noCar ? 'no-carrinho' : ''}" data-it="${i.id}">
+      <td class="mini"><span class="foto-prev pequena">${i.foto ? `<img src="${esc(i.foto)}" alt="" loading="lazy">` : '📦'}</span></td>
+      <td><b>${esc(i.c1) || '—'}</b><br><small class="mudo">${esc(i.c2)}</small></td>
+      <td><span class="selo ${q == null ? '' : baixo ? 'vermelho' : 'verde'}">${q == null ? 'não informado' : esc(fmtQtd(i, q))}</span></td>
+      <td class="acoes">${noCar ? '<span class="selo verde">no carrinho</span>' : ''}<button class="btn pequeno" data-add ${q == null || baixo ? 'disabled' : ''}>${ico('mais')} Carrinho</button>
+        ${pode('admin') ? `<button class="btn pequeno icone" data-ent="${i.id}" title="Entrada ou ajuste de estoque">＋</button>` : ''}${gerir ? `<button class="btn pequeno icone" data-edit="${i.id}" title="Editar">✎</button><button class="btn pequeno icone" data-del="${i.id}" title="Excluir">✕</button>` : ''}</td></tr>`;
+  };
+  const secoes = est.aba === 'mat' ? (!vis.length ? '' : prefMat.visao === 'lista'
+      ? `<div class="tabela-wrap" style="max-height:70vh"><table class="tabela lista-mat"><thead><tr><th></th><th>Material</th><th>Estoque</th><th></th></tr></thead><tbody>${vis.map(linhaMat).join('')}</tbody></table></div>`
+      : `<div class="rec-grid mat">${vis.map(card).join('')}</div>`)
     : Object.keys(grupos).filter((g) => vis.some((i) => grupo(i) === g)).map((g) => `<div class="rec-secao"><h3>${esc(grupos[g])} <span class="selo">${vis.filter((i) => grupo(i) === g).length}</span></h3>
         <div class="rec-grid">${vis.filter((i) => grupo(i) === g).map(card).join('')}</div></div>`).join('');
   box.innerHTML = `<div class="rec-layout"><div class="cartao">
+      ${est.aba === 'mat' ? `<div class="linha-flex" style="margin-bottom:10px"><h2 style="margin:0">📦 Estoque <span class="selo">${itens.length} ${itens.length === 1 ? 'material' : 'materiais'}</span></h2><span class="espaco"></span>
+        <label class="linha-flex pequeno" style="gap:6px">Ordenar <select id="mat-ordem" style="width:auto;padding:4px 6px">${Object.entries(ORDENS_MAT).map(([k, v]) => `<option value="${k}" ${k === prefMat.ordem ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        <div class="seletor-turno visao-mat"><button data-visao="cartoes" class="${prefMat.visao !== 'lista' ? 'ativo' : ''}" title="Ver em cartões">▦ Cartões</button><button data-visao="lista" class="${prefMat.visao === 'lista' ? 'ativo' : ''}" title="Ver em lista">☰ Lista</button></div></div>` : ''}
       <div class="linha-flex"><input type="search" id="rc-busca" placeholder="Buscar ${t.um}, ambiente ou servidor…" value="${esc(est.busca)}" style="max-width:280px">
         ${t.devolve ? `<span class="selo verde">${itens.length - nUso} disponíveis</span><span class="selo vermelho">${nUso} em uso</span>` : ''}<span class="espaco"></span>
         ${gerir ? `<button class="btn pequeno" id="rc-novo">${ico('mais')} Cadastrar ${t.um}</button>` : ''}</div>
@@ -80,10 +107,11 @@ function desenhar() {
       <div class="linha-flex hist-filtro"><label>De <input type="date" id="rc-h-ini" value="${hist.ini}" max="${hojeISO()}"></label><label>até <input type="date" id="rc-h-fim" value="${hist.fim}" max="${hojeISO()}"></label>
         <button class="btn pequeno fantasma" id="rc-h-sem">Última semana</button><span class="mudo pequeno" id="rc-h-n"></span></div>
       <div id="rc-hist"></div>
-      <div class="linha-flex" style="margin-top:8px"><button class="btn pequeno" id="rc-rel">${ico('imprimir')} Relatório por período</button></div></div></div></div>`;
+      <div class="linha-flex" style="margin-top:8px"><button class="btn pequeno" id="rc-rel">${ico('imprimir')} Relatório por período</button><span class="espaco"></span>
+        ${pode('admin') ? `<button class="btn pequeno perigo" id="rc-h-limpar" title="Apaga os movimentos do período escolhido acima">Limpar histórico</button>` : ''}</div></div></div></div>`;
   $('#rc-busca').oninput = (e) => { est.busca = e.target.value; const pos = e.target.selectionStart; desenhar(); const i = $('#rc-busca'); i.focus(); i.setSelectionRange(pos, pos); };
   $$('[data-g]', box).forEach((b) => (b.onclick = () => { const g = b.dataset.g; if (!g) est.filtro.clear(); else est.filtro.has(g) ? est.filtro.delete(g) : est.filtro.add(g); desenhar(); }));
-  $$('[data-it]', box).forEach((b) => (b.onclick = (e) => {
+  $$('button[data-it]', box).forEach((b) => (b.onclick = (e) => {
     if (e.target.dataset.edit) return editarItem(R.itens.find((i) => i.id === e.target.dataset.edit));
     if (e.target.dataset.del) return excluirItem(R.itens.find((i) => i.id === e.target.dataset.del));
     if (e.target.dataset.ent) return entradaEstoque(R.itens.find((i) => i.id === e.target.dataset.ent));
@@ -93,12 +121,36 @@ function desenhar() {
   }));
   const nv = $('#rc-novo'); if (nv) nv.onclick = () => editarItem(null);
   $('#rc-rel').onclick = relatorio;
+  const om = $('#mat-ordem'); if (om) om.onchange = () => { prefMat.ordem = om.value; salvarPrefMat(); desenhar(); };
+  $$('[data-visao]', box).forEach((b) => (b.onclick = () => { prefMat.visao = b.dataset.visao; salvarPrefMat(); desenhar(); }));
+  $$('.lista-mat tr[data-it]', box).forEach((tr) => {
+    const it = R.itens.find((i) => i.id === tr.dataset.it);
+    tr.onclick = (e) => {
+      const alvo = e.target.closest('button'); if (!alvo) return;
+      if (alvo.dataset.edit) return editarItem(it);
+      if (alvo.dataset.del) return excluirItem(it);
+      if (alvo.dataset.ent) return entradaEstoque(it);
+      if ('add' in alvo.dataset) return porNoCarrinho(it);
+    };
+  });
+  const lh = $('#rc-h-limpar'); if (lh) lh.onclick = limparHistorico;
   desenharCarrinho();
   const hi = $('#rc-h-ini'), hf = $('#rc-h-fim');
   const mudou = () => { if (!hi.value || !hf.value) return; if (hi.value > hf.value) hf.value = hi.value; hist.ini = hi.value; hist.fim = hf.value; hist.chave = ''; historico(); };
   hi.onchange = mudou; hf.onchange = mudou;
   $('#rc-h-sem').onclick = () => { hi.value = addDias(hojeISO(), -6); hf.value = hojeISO(); mudou(); };
   historico();
+}
+
+// Limpeza do histórico pelo administrador: apaga os movimentos já encerrados do período em exibição. Não mexe no estoque.
+async function limparHistorico() {
+  const aba = est.aba, t = TIPOS[aba]; const n = hist.movs.filter((m) => m.devolvido_em).length;
+  if (!n) return aviso('Não há movimentos encerrados nesse período para apagar.', 'erro');
+  const d = (s) => s.split('-').reverse().join('/');
+  const ok = await confirmar(`Apagar ${n} movimento(s) de ${t.rot.toLowerCase()} de ${d(hist.ini)} a ${d(hist.fim)}?\n\n${aba === 'mat' ? 'O estoque atual não muda: só o histórico de retiradas, entradas e ajustes desse período é apagado.' : 'Itens que ainda estão em uso continuam na lista.'}\nIsso não pode ser desfeito.`, { ok: 'Apagar histórico', perigo: true });
+  if (!ok) return;
+  try { const r = await api('rec_historico_limpar', { p_tipo: aba, p_ini: hist.ini, p_fim: hist.fim }); aviso(`${r} movimento(s) apagado(s).`, 'ok'); hist.chave = ''; hist.movs = []; carregar(); }
+  catch (e) { aviso(e.message, 'erro'); }
 }
 
 // Últimos movimentos: intervalo de datas escolhido na tela (padrão: última semana), sem precisar imprimir o relatório.
