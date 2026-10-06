@@ -1003,6 +1003,19 @@ begin
            where m.tipo = p_tipo and m.entregue_em::date between coalesce(p_ini, '2000-01-01') and coalesce(p_fim, current_date));
 end $$;
 
+-- Limpeza do histórico pelo administrador: apaga os movimentos encerrados do período. Não altera o estoque.
+create or replace function public.rec_historico_limpar(p_token text, p_tipo text, p_ini date, p_fim date) returns int
+language plpgsql security definer set search_path = public as
+$$
+declare eu public.usuarios := public._exige(p_token, 'admin'); n int;
+begin
+  if p_tipo not in ('chaves','equip','mat') or p_ini is null or p_fim is null or p_fim < p_ini then raise exception 'QTD_INVALIDA'; end if;
+  delete from public.rec_movs m where m.tipo = p_tipo and m.devolvido_em is not null and m.entregue_em::date between p_ini and p_fim;
+  get diagnostics n = row_count;
+  perform public._log(eu.login, 'recursos', format('Histórico de %s apagado de %s a %s: %s movimento(s)', p_tipo, to_char(p_ini,'DD/MM/YYYY'), to_char(p_fim,'DD/MM/YYYY'), n));
+  return n;
+end $$;
+
 -- v2.3: almoxarifado · estoque na unidade de consumo, embalagem opcional (resma de 500 folhas) e retirada por carrinho
 alter table public.rec_itens add column if not exists foto text not null default '';
 alter table public.rec_itens add column if not exists qtd int;
