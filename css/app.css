@@ -150,6 +150,9 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .selo.vermelho, .selo.ausente { background: var(--vermelho-claro); color: var(--vermelho); }
 .selo.ambar, .selo.atraso { background: var(--ambar-claro); color: var(--ambar); }
 .selo.laranja, .selo.saida { background: var(--laranja-claro); color: var(--laranja); }
+.selo.cinza, .selo.nao { background: #e9eeec; color: #4d5a56; }
+.aula-extra select[data-jus] { width: auto; min-width: 190px; }
+.aula-extra select.falta-jus { border-color: var(--vermelho); background: var(--vermelho-claro); }
 .selo.azul, .selo.regular { background: var(--azul-claro); color: var(--azul); }
 .selo.roxo, .selo.extra { background: var(--roxo-claro); color: var(--roxo); }
 .selo.permuta { background: #fff8e1; color: #b55a00; }
@@ -258,7 +261,7 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .semana .dia:last-child { border-right: 0; }
 .semana .dia > b { display: block; text-align: center; font-size: 12px; background: #eef3f1; padding: 5px 0; letter-spacing: .5px; }
 .semana .dia.hoje > b { background: var(--petroleo); color: #fff; }
-.slot { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid #eef2f0; background: none; padding: 5px 6px; font-size: 12px; cursor: pointer; line-height: 1.25; }
+.slot { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid #eef2f0; background: none; padding: 5px 6px; font-size: 12px; cursor: pointer; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; word-break: break-word; min-width: 0; overflow: hidden; }
 .slot:hover { background: var(--verde-claro); }
 .slot b { font-family: var(--mono); font-size: 12px; display: block; }
 .slot small { color: var(--tinta-3); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
