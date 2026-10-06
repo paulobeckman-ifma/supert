@@ -21,6 +21,8 @@ const MSG = {
   ULTIMO_ADMIN: 'O sistema precisa de pelo menos um administrador ativo.',
   NAO_ENCONTRADO: 'Registro não encontrado (pode ter sido alterado por outra pessoa). Atualize a tela.',
   NOME_OBRIGATORIO: 'Preencha o nome.',
+  SEM_ESTOQUE: 'O estoque de um dos materiais mudou e não cobre mais essa retirada. Confira as quantidades e tente de novo.',
+  QTD_INVALIDA: 'Quantidade inválida.',
   PROFESSOR_DUPLICADO: 'Já existe um professor com este nome abreviado.',
   JA_EXISTE_REGULAR: 'Já existe aula REGULAR deste professor nesta disciplina e turma neste dia.',
   DATA_OBRIGATORIA: 'Informe a data.',

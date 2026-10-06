@@ -3,7 +3,7 @@ import { $, $$, esc, ico, aviso, CFG, confirmar } from './util.js';
 import { rpc, api, sessao, traduzir, pode } from './api.js';
 import { D, carregarCadastro, iniciarSincronia, pararSincronia } from './dados.js';
 
-export const VERSAO = '2.2.0';
+export const VERSAO = '2.3.0';
 const raiz = $('#app');
 let desmontar = null;
 let paginaAtual = null;
