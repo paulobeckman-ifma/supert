@@ -326,6 +326,9 @@ table.tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .lote-barra { margin-bottom: 8px; align-items: center; min-height: 32px; }
 .hist-filtro { gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; font-size: 13px; }
 .hist-filtro input[type=date] { width: auto; padding: 4px 6px; font-size: 13px; }
+.lista-mat td { vertical-align: middle; } .lista-mat td.mini { width: 48px; } .lista-mat tr.no-carrinho { background: var(--verde-claro); }
+.lista-mat td.acoes { white-space: nowrap; text-align: right; } .lista-mat td.acoes .btn { margin-left: 4px; }
+.visao-mat button { padding: 4px 10px; font-size: 12.5px; }
 .rec-direita { display: grid; gap: 14px; align-content: start; min-width: 0; }
 .rec-card.mat.no-carrinho { border-color: var(--verde); box-shadow: 0 0 0 2px var(--verde-claro); }
 .rec-card.mat .car { display: inline-block; margin: 6px 0 0 4px; font-size: 11px; font-weight: 700; color: var(--verde-escuro); }
