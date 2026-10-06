@@ -54,7 +54,7 @@ export function lerLinhas(rows) {
   const aulas = [];
   const temTurma = rows.slice(0, 80).some((r) => /^Turma\s+/i.test(String(r[0] || '').trim()));
   if (temTurma) {
-    let turma = null;
+    let turma = null; const vistos = new Set();
     for (let i = 0; i < rows.length; i++) {
       const c0 = String(rows[i][0] ?? '').trim();
       const mt = c0.match(/^Turma\s+(.+)$/i);
@@ -63,8 +63,12 @@ export function lerLinhas(rows) {
       if (!h) continue;
       const prof = rows[i + 1] || [];
       for (let d = 1; d <= 6; d++) {
-        const disc = String(rows[i][d] ?? '').trim(); if (!disc || disc === '---') continue;
-        aulas.push({ turma, dia: d, hora: h, disc, prof: String(prof[d] ?? '').trim() });
+        let disc = String(rows[i][d] ?? '').trim(); if (!disc || disc === '---') continue;
+        // Bloco extra no fim da planilha (ex.: Educação Física no contraturno) traz a turma dentro da célula: "111-I Educacao Fisica I".
+        let tur = turma; const mc = disc.match(/^(\d{3}-[A-Z]+)\s+(.+)$/); if (mc) { tur = mc[1]; disc = mc[2].trim(); }
+        const pr = String(prof[d] ?? '').trim(); const kk = `${tur}|${d}|${h}|${chave(disc)}|${chave(pr)}`;
+        if (vistos.has(kk)) continue; vistos.add(kk);
+        aulas.push({ turma: tur, dia: d, hora: h, disc, prof: pr });
       }
       i++;
     }
