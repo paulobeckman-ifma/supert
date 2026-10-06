@@ -1,5 +1,5 @@
 // Chaves, equipamentos e materiais: retirada (uma ou várias de uma vez), devolução, permuta de chave e histórico
-import { $, $$, esc, ico, aviso, confirmar, modal, semAcento, fmtDataHora, imprimirDoc, periodo, baixarCsv } from './util.js';
+import { $, $$, esc, ico, aviso, confirmar, modal, semAcento, fmtDataHora, imprimirDoc, periodo, baixarCsv, hojeISO, addDias } from './util.js';
 import { api, pode } from './api.js';
 import { D } from './dados.js';
 
@@ -22,7 +22,7 @@ let R = { itens: [], movs: [], servidores: [] };
 
 export async function render(el, { cabecalho }) {
   el.innerHTML = cabecalho('Chaves e recursos', 'Clique num item disponível (verde/colorido) para entregar; num item em uso (vermelho) para devolver ou permutar.') + `
-    <div class="abas">${Object.entries(TIPOS).map(([k, t]) => `<button data-a="${k}">${t.rot}</button>`).join('')}<button data-a="serv">Servidores</button></div>
+    <div class="abas">${Object.entries(TIPOS).map(([k, t]) => `<button data-a="${k}">${t.rot}</button>`).join('')}<button data-a="serv">Cadastro de Pessoal</button></div>
     <div id="rc-corpo"><div class="vazio">Carregando…</div></div>`;
   $$('.abas button', el).forEach((b) => (b.onclick = () => { est.aba = b.dataset.a; est.filtro = new Set(); desenhar(); }));
   await carregar();
@@ -55,11 +55,18 @@ function desenhar() {
     const m = t.devolve ? emUso(i.id) : null; const g = grupo(i);
     const icone = est.aba === 'chaves' ? '🔑' : est.aba === 'equip' ? (g === 'controle_tv' ? ICO_CONTROLE : (EQ_ICO[g] || '📦')) : '📦';
     const dica = m ? `${m.servidor_nome}\nMatrícula: ${m.matricula || '—'}\nRetirada: ${fmtDataHora(m.entregue_em)} (por ${m.entregue_por})` : i.c2;
+    if (est.aba === 'mat') {
+      const q = i.qtd; const baixo = q != null && q <= 0;
+      return `<button class="rec-card mat ${baixo ? 'zerado' : ''}" data-it="${i.id}" data-dica="${esc(i.c2 || i.c1)}">
+      ${gerir ? `<span class="acao-mini"><span data-edit="${i.id}">✎</span><span data-del="${i.id}">✕</span></span>` : ''}
+      <span class="foto">${i.foto ? `<img src="${esc(i.foto)}" alt="" loading="lazy">` : '📦'}</span><span class="n">${esc(i.c1) || '—'}</span><span class="d">${esc(i.c2)}</span>
+      <span class="q">${q == null ? 'sem quantidade' : `${q} em estoque`}</span></button>`;
+    }
     return `<button class="rec-card ${m ? 'uso' : ''} ${est.aba === 'chaves' ? 'b-' + g : ''}" data-it="${i.id}" data-dica="${esc(dica)}">
       ${gerir ? `<span class="acao-mini"><span data-edit="${i.id}">✎</span><span data-del="${i.id}">✕</span></span>` : ''}
       <span class="ic">${icone}</span><span class="n">${esc(i.c1) || '—'}</span><span class="d">${esc(i.c2)}</span>${m ? `<span class="w">${esc((m.servidor_nome || m.matricula).split(' ')[0])}</span>` : ''}</button>`;
   };
-  const secoes = est.aba === 'mat' ? `<div class="rec-grid">${vis.map(card).join('')}</div>`
+  const secoes = est.aba === 'mat' ? `<div class="rec-grid mat">${vis.map(card).join('')}</div>`
     : Object.keys(grupos).filter((g) => vis.some((i) => grupo(i) === g)).map((g) => `<div class="rec-secao"><h3>${esc(grupos[g])} <span class="selo">${vis.filter((i) => grupo(i) === g).length}</span></h3>
         <div class="rec-grid">${vis.filter((i) => grupo(i) === g).map(card).join('')}</div></div>`).join('');
   box.innerHTML = `<div class="rec-layout"><div class="cartao">
@@ -68,7 +75,10 @@ function desenhar() {
         ${gerir ? `<button class="btn pequeno" id="rc-novo">${ico('mais')} Cadastrar ${t.um}</button>` : ''}</div>
       ${est.aba !== 'mat' ? `<div class="chips" style="margin-top:10px"><button class="chip ${!est.filtro.size ? 'ativo' : ''}" data-g="">Todos</button>${Object.keys(grupos).filter((g) => cont[g]).map((g) => `<button class="chip ${est.filtro.has(g) ? 'ativo' : ''}" data-g="${g}">${esc(grupos[g])} <small>${cont[g]}</small></button>`).join('')}</div>` : ''}
       ${secoes || '<div class="vazio">Nenhum item.</div>'}</div>
-    <div class="cartao"><h2>${ico('historico')} Últimos movimentos</h2><div id="rc-hist"></div>
+    <div class="cartao"><h2>${ico('historico')} Últimos movimentos</h2>
+      <div class="linha-flex hist-filtro"><label>De <input type="date" id="rc-h-ini" value="${hist.ini}" max="${hojeISO()}"></label><label>até <input type="date" id="rc-h-fim" value="${hist.fim}" max="${hojeISO()}"></label>
+        <button class="btn pequeno fantasma" id="rc-h-sem">Última semana</button><span class="mudo pequeno" id="rc-h-n"></span></div>
+      <div id="rc-hist"></div>
       <div class="linha-flex" style="margin-top:8px"><button class="btn pequeno" id="rc-rel">${ico('imprimir')} Relatório por período</button></div></div></div>`;
   $('#rc-busca').oninput = (e) => { est.busca = e.target.value; const pos = e.target.selectionStart; desenhar(); const i = $('#rc-busca'); i.focus(); i.setSelectionRange(pos, pos); };
   $$('[data-g]', box).forEach((b) => (b.onclick = () => { const g = b.dataset.g; if (!g) est.filtro.clear(); else est.filtro.has(g) ? est.filtro.delete(g) : est.filtro.add(g); desenhar(); }));
@@ -80,18 +90,30 @@ function desenhar() {
   }));
   const nv = $('#rc-novo'); if (nv) nv.onclick = () => editarItem(null);
   $('#rc-rel').onclick = relatorio;
+  const hi = $('#rc-h-ini'), hf = $('#rc-h-fim');
+  const mudou = () => { if (!hi.value || !hf.value) return; if (hi.value > hf.value) hf.value = hi.value; hist.ini = hi.value; hist.fim = hf.value; hist.chave = ''; historico(); };
+  hi.onchange = mudou; hf.onchange = mudou;
+  $('#rc-h-sem').onclick = () => { hi.value = addDias(hojeISO(), -6); hf.value = hojeISO(); mudou(); };
   historico();
 }
 
-function historico() {
+// Últimos movimentos: intervalo de datas escolhido na tela (padrão: última semana), sem precisar imprimir o relatório.
+const hist = { ini: addDias(hojeISO(), -6), fim: hojeISO(), chave: '', movs: [] };
+async function historico() {
   const box = $('#rc-hist'); if (!box) return;
-  const ids = new Set(R.itens.filter((i) => i.tipo === est.aba).map((i) => i.id));
-  const l = R.movs.filter((m) => m.tipo === est.aba || ids.has(m.item_id)).slice(0, 60);
-  if (!l.length) { box.innerHTML = '<div class="vazio">Sem movimentos recentes.</div>'; return; }
+  const aba = est.aba; const chave = `${aba}|${hist.ini}|${hist.fim}|${R.movs.length}|${R.movs[0]?.id || ''}|${R.movs.filter((m) => !m.devolvido_em).length}`;
+  if (hist.chave !== chave) {
+    if (!hist.movs.length) box.innerHTML = '<div class="vazio">Carregando…</div>';
+    try { hist.movs = await api('rec_historico', { p_tipo: aba, p_ini: hist.ini, p_fim: hist.fim }); hist.chave = chave; }
+    catch (e) { box.innerHTML = `<div class="caixa erro-caixa">${esc(e.message)}</div>`; return; }
+    if (est.aba !== aba || !$('#rc-hist')) return;
+  }
+  const l = hist.movs; const cont = $('#rc-h-n'); if (cont) cont.textContent = `${l.length} movimento${l.length === 1 ? '' : 's'}`;
+  if (!l.length) { box.innerHTML = '<div class="vazio">Sem movimentos nesse período.</div>'; return; }
   const nome = (id) => { const i = R.itens.find((x) => x.id === id); return i ? `${i.c1}${i.c2 ? ' · ' + i.c2 : ''}` : '(item removido)'; };
-  box.innerHTML = `<div class="tabela-wrap" style="max-height:60vh"><table class="tabela"><thead><tr><th>Item</th><th>Servidor</th><th>Saída</th>${TIPOS[est.aba].devolve ? '<th>Devolução</th>' : ''}</tr></thead><tbody>
+  box.innerHTML = `<div class="tabela-wrap" style="max-height:60vh"><table class="tabela"><thead><tr><th>Item</th><th>Servidor</th><th>Saída</th>${TIPOS[aba].devolve ? '<th>Devolução</th>' : ''}</tr></thead><tbody>
     ${l.map((m) => `<tr data-dica="${esc(`Entregue por ${m.entregue_por}${m.recebido_por ? '\nRecebido por ' + m.recebido_por : ''}${m.obs ? '\n' + m.obs : ''}`)}"><td>${esc(nome(m.item_id))}</td><td>${esc(m.servidor_nome || m.matricula)}</td><td class="mono">${fmtDataHora(m.entregue_em)}</td>
-      ${TIPOS[est.aba].devolve ? `<td class="mono">${m.devolvido_em ? fmtDataHora(m.devolvido_em) : '<span class="selo vermelho">em uso</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
+      ${TIPOS[aba].devolve ? `<td class="mono">${m.devolvido_em ? fmtDataHora(m.devolvido_em) : '<span class="selo vermelho">em uso</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
 }
 
 // ------------------------------------------------------------------ retirada (uma ou várias)
@@ -181,16 +203,47 @@ function devolver(item, mov) {
 function editarItem(it) {
   const tipo = it?.tipo || est.aba; const t = TIPOS[tipo];
   const grp = it ? grupo(it) : (tipo === 'chaves' ? 'b1' : 'notebook');
+  let fotoAtual = it?.foto || '';
   modal({
     titulo: it ? `Editar ${t.um}` : `Cadastrar ${t.um}`,
     corpo: `<div class="grade" style="grid-template-columns:1fr 2fr"><label class="campo"><span>${t.c1}</span><input name="c1" value="${esc(it?.c1 || '')}"></label><label class="campo"><span>${t.c2}</span><input name="c2" value="${esc(it?.c2 || '')}"></label></div>
       ${tipo === 'chaves' ? `<label class="campo"><span>Bloco</span><select name="g">${Object.entries(BLOCOS).map(([k, v]) => `<option value="${k}" ${k === grp ? 'selected' : ''}>${v}</option>`).join('')}</select></label>` : ''}
-      ${tipo === 'equip' ? `<label class="campo"><span>Tipo</span><select name="g">${Object.entries(EQ).map(([k, v]) => `<option value="${k}" ${k === grp ? 'selected' : ''}>${EQ_ICO[k]} ${v}</option>`).join('')}</select></label>` : ''}`,
+      ${tipo === 'equip' ? `<label class="campo"><span>Tipo</span><select name="g">${Object.entries(EQ).map(([k, v]) => `<option value="${k}" ${k === grp ? 'selected' : ''}>${EQ_ICO[k]} ${v}</option>`).join('')}</select></label>` : ''}
+      ${tipo === 'mat' ? `<div class="grade" style="grid-template-columns:1fr 2fr;align-items:start">
+        <label class="campo"><span>Quantidade em estoque</span><input name="qtd" type="number" min="0" step="1" value="${esc(it?.qtd ?? '')}" placeholder="ex.: 10"></label>
+        <div class="campo"><span>Foto</span><div class="linha-flex" style="gap:10px;align-items:center">
+          <span class="foto-prev" id="ri-prev">${it?.foto ? `<img src="${esc(it.foto)}" alt="">` : '📦'}</span>
+          <label class="btn">Escolher foto<input type="file" id="ri-foto" accept="image/*" style="display:none"></label>
+          <button type="button" class="btn fantasma" id="ri-sem-foto">Remover</button></div></div></div>` : ''}`,
+    aoAbrir: (el) => {
+      if (tipo !== 'mat') return;
+      const prev = $('#ri-prev', el);
+      $('#ri-foto', el).onchange = async (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        try { fotoAtual = await reduzirFoto(f); prev.innerHTML = `<img src="${fotoAtual}" alt="">`; } catch { aviso('Não consegui ler essa imagem.', 'erro'); }
+      };
+      $('#ri-sem-foto', el).onclick = () => { fotoAtual = ''; prev.textContent = '📦'; };
+    },
     botoes: [{ texto: 'Cancelar', valor: null }, { texto: 'Salvar', classe: 'primario', acao: async (fechar, el) => {
       const g = $('[name=g]', el)?.value;
-      await api('rec_item_salvar', { p_dados: { id: it?.id || null, tipo, c1: $('[name=c1]', el).value, c2: $('[name=c2]', el).value, icone: tipo === 'equip' ? g : tipo === 'chaves' ? 'chave' : '📦', bloco: tipo === 'chaves' ? (g === 'outros' ? '' : g) : '' } });
+      await api('rec_item_salvar', { p_dados: { id: it?.id || null, tipo, c1: $('[name=c1]', el).value, c2: $('[name=c2]', el).value, icone: tipo === 'equip' ? g : tipo === 'chaves' ? 'chave' : '📦', bloco: tipo === 'chaves' ? (g === 'outros' ? '' : g) : '',
+        ...(tipo === 'mat' ? { foto: fotoAtual || '', qtd: $('[name=qtd]', el).value === '' ? null : Number($('[name=qtd]', el).value) } : {}) } });
       aviso('Salvo.', 'ok'); fechar(true); carregar(); return false;
     } }]
+  });
+}
+/** Reduz a foto para caber no banco (lado maior de 320 px, JPEG). */
+function reduzirFoto(file) {
+  return new Promise((ok, erro) => {
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, 320 / Math.max(img.width, img.height)); const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); ok(c.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); erro(new Error('imagem')); };
+    img.src = url;
   });
 }
 async function excluirItem(it) {
