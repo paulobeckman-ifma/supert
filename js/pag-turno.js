@@ -79,9 +79,11 @@ function desenhar() {
   const porHora = new Map();
   for (const a of visiveis) { if (!porHora.has(a.inicio)) porHora.set(a.inicio, []); porHora.get(a.inicio).push(a); }
   lista.innerHTML = [...porHora.entries()].map(([h, l]) => `
-    <div class="bloco-hora"><h3>${ico('relogio')} ${h} <span class="selo">${l.length} aula${l.length > 1 ? 's' : ''}</span></h3>
+    <div class="bloco-hora"><h3>${ico('relogio')} ${h} <span class="selo">${l.length} aula${l.length > 1 ? 's' : ''}</span>${botoesHora(h)}</h3>
       <div class="linhas-aula">${l.map(linha).join('')}</div></div>`).join('') || '<div class="vazio">Nenhuma aula com esse filtro.</div>';
 
+  $$('[data-hora-ok]', lista).forEach((b) => (b.onclick = () => lancarTurno(b.dataset.horaOk)));
+  $$('[data-hora-nao]', lista).forEach((b) => (b.onclick = () => semAulaNoTurno(b.dataset.horaNao)));
   $$('.aula', lista).forEach((row) => {
     const k = row.dataset.k;
     $$('[data-s]', row).forEach((b) => (b.onclick = () => {
@@ -127,8 +129,23 @@ function linha(a) {
     <div class="status-bot">${bot('p', 'Presente')}${bot('f', 'Falta')}${bot('a', 'Atraso')}${bot('s', 'Saída')}${bot('n', 'Não houve')}</div>${extra}</div>`;
 }
 
-function pendentes() {
-  return previstas.filter((a) => !jaLancado(a)).map((a) => ({ a, m: est.marcas[chaveAula(a)] || { s: 'p' } }));
+// Sem horário: todas as pendentes do turno. Com horário (ex.: '07:10'): só as que começam nele.
+function pendentes(hora) {
+  return previstas.filter((a) => !jaLancado(a) && (!hora || a.inicio === hora)).map((a) => ({ a, m: est.marcas[chaveAula(a)] || { s: 'p' } }));
+}
+const soHora = (h) => (typeof h === 'string' && /^\d{2}:\d{2}$/.test(h) ? h : null);
+// Botões ao lado de cada horário, para lançar aos poucos ao longo do turno (o botão do rodapé continua lançando tudo).
+function botoesHora(h) {
+  const tot = previstas.filter((a) => a.inicio === h).length; const n = pendentes(h).length;
+  if (!n) return `<span class="selo verde">${ico('check', 'ico-s')} horário lançado</span>`;
+  if (!pode('turno')) return '';
+  return `<span class="acoes-hora">
+    <button class="btn pequeno" data-hora-nao="${h}" title="Lança as aulas pendentes das ${h} como 'não houve', com a mesma justificativa">Não houve aula às ${h}</button>
+    <button class="btn pequeno primario" data-hora-ok="${h}" title="Lança só as aulas que começam às ${h}, com as marcações feitas abaixo">${ico('check', 'ico-s')} Lançar ${n === tot ? '' : n + ' de '}${tot} aula${tot > 1 ? 's' : ''} das ${h}</button></span>`;
+}
+function limparMarcas(hora) {
+  if (!hora) { est.marcas = {}; return; }
+  for (const a of previstas) if (a.inicio === hora) delete est.marcas[chaveAula(a)];
 }
 
 function resumo() {
@@ -157,13 +174,13 @@ function resumo() {
 }
 
 // Turno inteiro sem aula (feriado, evento, paralisação…): todas as pendentes viram "não houve" com a mesma justificativa.
-async function semAulaNoTurno() {
+async function semAulaNoTurno(h) {
   if (!pode('turno')) return aviso('Seu perfil não pode lançar o turno.', 'erro');
-  const pend = pendentes(); if (!pend.length) return;
+  const hora = soHora(h); const pend = pendentes(hora); if (!pend.length) return;
   const nomeTurno = (D.turnos[est.turno]?.nome || '').toLowerCase();
   const r = await modal({
-    titulo: `Não houve aula no ${nomeTurno} de ${fmtData(est.data)}`,
-    corpo: `<p style="margin:0 0 10px">As <b>${pend.length}</b> aulas ainda não lançadas deste turno serão registradas como <b>não houve</b>, com 0 aulas e sem gerar notificação de falta.</p>
+    titulo: hora ? `Não houve aula às ${hora} de ${fmtData(est.data)}` : `Não houve aula no ${nomeTurno} de ${fmtData(est.data)}`,
+    corpo: `<p style="margin:0 0 10px">As <b>${pend.length}</b> aulas ainda não lançadas ${hora ? 'das ' + hora : 'deste turno'} serão registradas como <b>não houve</b>, com 0 aulas e sem gerar notificação de falta.</p>
       <label class="campo"><span>Justificativa (vale para todas)</span><select name="jus">${opcoesJustificativa('')}</select></label>
       <label class="campo"><span>Detalhe (opcional)</span><input type="text" name="obs" maxlength="300" placeholder="ex.: ponto facultativo, jogos internos, falta de energia"></label>`,
     botoes: [{ texto: 'Voltar', valor: null }, { texto: `${ico('check')} Lançar ${pend.length} como não houve`, classe: 'primario', acao: (fechar, el) => {
@@ -176,18 +193,18 @@ async function semAulaNoTurno() {
     data: est.data, status: 'nao', aulas: 0, justificativa: r.jus, minutos: null, horario: a.inicio, obs: r.obs,
     disciplina_id: a.disciplina_id, professor_id: a.professor_id, prof: a.prof, disc: a.disc, turma: a.turma, diario_id: a.diario_id, ch_total: a.ch_total
   }));
-  const b = $('#t-sem-aula'); if (b) { b.disabled = true; b.textContent = 'Lançando…'; }
+  const b = hora ? $(`[data-hora-nao="${hora}"]`) : $('#t-sem-aula'); if (b) { b.disabled = true; b.textContent = 'Lançando…'; }
   try {
     const res = await api('registros_lancar', { p_regs: regs }, { timeout: 60000 });
     aviso(`${res.lancados} aula(s) registrada(s) como não houve.${res.pulados ? ` ${res.pulados} já estavam registradas e foram mantidas.` : ''}`, 'ok');
-    est.marcas = {};
+    limparMarcas(hora);
     await carregar(false);
   } catch (e) { aviso(e.message, 'erro'); resumo(); }
 }
 
-async function lancarTurno() {
+async function lancarTurno(h) {
   if (!pode('turno')) return aviso('Seu perfil não pode lançar o turno.', 'erro');
-  const pend = pendentes();
+  const hora = soHora(h); const pend = pendentes(hora); if (!pend.length) return;
   const semJus = pend.filter(({ m }) => m.s === 'n' && !m.jus);
   if (semJus.length) { aviso(`Escolha a justificativa de ${semJus.length} aula(s) marcada(s) como "não houve".`, 'erro'); $('select[data-jus].falta-jus')?.focus(); return; }
   const excecoes = pend.filter(({ m }) => m.s !== 'p');
@@ -198,7 +215,7 @@ async function lancarTurno() {
       </tbody></table></div>`
     : '<div class="caixa ok-caixa">Nenhuma falta, atraso, saída ou aula não realizada marcada: todas as aulas entram como presença.</div>';
   const ok = await modal({
-    titulo: `Lançar ${nomeTurno.toLowerCase()} de ${fmtData(est.data)}`,
+    titulo: hora ? `Lançar aulas das ${hora} de ${fmtData(est.data)}` : `Lançar ${nomeTurno.toLowerCase()} de ${fmtData(est.data)}`,
     corpo: `<p style="margin:0">Serão lançados <b>${pend.length}</b> registros: <b>${pend.length - excecoes.length}</b> presenças e <b>${excecoes.length}</b> ocorrências.</p>${lista}`,
     botoes: [{ texto: 'Voltar', valor: false }, { texto: `${ico('check')} Confirmar lançamento`, classe: 'primario', valor: true }]
   }).promessa;
@@ -208,11 +225,11 @@ async function lancarTurno() {
     horario: a.inicio, obs: m.obs || '', disciplina_id: a.disciplina_id, professor_id: a.professor_id,
     prof: a.prof, disc: a.disc, turma: a.turma, diario_id: a.diario_id, ch_total: a.ch_total
   }));
-  const b = $('#t-lancar'); if (b) { b.disabled = true; b.textContent = 'Lançando…'; }
+  const b = hora ? $(`[data-hora-ok="${hora}"]`) : $('#t-lancar'); if (b) { b.disabled = true; b.textContent = 'Lançando…'; }
   try {
     const r = await api('registros_lancar', { p_regs: regs }, { timeout: 60000 });
     aviso(`${r.lancados} aula(s) lançada(s).${r.pulados ? ` ${r.pulados} já estavam registradas por outra pessoa e foram mantidas.` : ''}`, 'ok');
-    est.marcas = {};
+    limparMarcas(hora);
     await carregar(false);
   } catch (e) { aviso(e.message, 'erro'); if (b) { b.disabled = false; } resumo(); }
 }
