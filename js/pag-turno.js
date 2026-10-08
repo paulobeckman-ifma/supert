@@ -8,6 +8,13 @@ import { editarRegistro } from './regmodal.js';
 
 const ST = { p: 'presente', f: 'ausente', a: 'atraso', s: 'saida', n: 'nao' };
 let est = null;
+// Modalidade: superior = turmas de Física, Ciência da Computação (C.C.), Engenharia Elétrica (E.E.) e Engenharia Civil (E.C.); o resto é técnico.
+// Nada marcado ou as duas marcadas = mostra tudo. A escolha fica guardada neste navegador.
+const ehSuperior = (turma) => /^\s*(F[IÍ]SICA|C\.?\s?C\.?|E\.?\s?E\.?|E\.?\s?C\.?)(\s|$)/i.test(String(turma || ''));
+const modal_ = (() => { try { return new Set(JSON.parse(localStorage.getItem('supert2_modalidade') || '[]')); } catch { return new Set(); } })();
+const salvarModal = () => { try { localStorage.setItem('supert2_modalidade', JSON.stringify([...modal_])); } catch { /* sem armazenamento */ } };
+const passaModal = (a) => modal_.size !== 1 || (modal_.has('sup') ? ehSuperior(a.turma) : !ehSuperior(a.turma));
+const previstasDo = (data, turno) => aulasPrevistas(data, turno).filter(passaModal);
 
 export async function render(el, { cabecalho, params }) {
   const hoje = hojeISO();
@@ -22,6 +29,8 @@ export async function render(el, { cabecalho, params }) {
           <input type="date" id="t-data" value="${est.data}" max="${hoje}" style="width:auto">
           <button class="btn icone" data-dia="1" title="Próximo dia">›</button></div></label>
         <div class="campo"><span>Turno</span><div class="seletor-turno" id="t-turnos"></div></div>
+        <div class="campo"><span>Modalidade</span><div class="seletor-turno" id="t-modal">
+          <button data-m="tec" title="Mostrar só as turmas do técnico">Técnico</button><button data-m="sup" title="Física, C.C., E.E. e E.C.">Superior</button></div></div>
         <label class="campo" style="flex:1;min-width:220px"><span>Filtrar por professor, turma ou disciplina</span>
           <input type="search" id="t-busca" placeholder="Digite para filtrar…" value="${esc(est.busca)}"></label>
         <div class="campo rel" style="min-width:250px"><span>Falta rápida (professor que não veio)</span>
@@ -35,6 +44,9 @@ export async function render(el, { cabecalho, params }) {
   $('#t-data').onchange = (e) => { est.data = e.target.value || hoje; est.marcas = {}; carregar(); };
   $$('[data-dia]', el).forEach((b) => (b.onclick = () => { const n = addDias(est.data, Number(b.dataset.dia)); if (n > hoje) return; est.data = n; $('#t-data').value = n; est.marcas = {}; carregar(); }));
   $('#t-busca').oninput = (e) => { est.busca = e.target.value; desenhar(); };
+  const marcarModal = () => $$('#t-modal button').forEach((b) => b.classList.toggle('ativo', modal_.has(b.dataset.m)));
+  marcarModal();
+  $$('#t-modal button').forEach((b) => (b.onclick = () => { modal_.has(b.dataset.m) ? modal_.delete(b.dataset.m) : modal_.add(b.dataset.m); salvarModal(); marcarModal(); desenharTurnos(); desenhar(); }));
   configurarFaltaRapida();
   await carregar();
 }
@@ -54,7 +66,7 @@ async function carregar(mostrarCarregando = true) {
 function desenharTurnos() {
   const box = $('#t-turnos'); if (!box) return;
   box.innerHTML = turnosOrdenados().map(([k, t]) => {
-    const n = aulasPrevistas(est.data, k).length;
+    const n = previstasDo(est.data, k).length;
     return `<button data-t="${k}" class="${k === est.turno ? 'ativo' : ''}">${esc(t.nome)} <small class="mudo" style="color:inherit;opacity:.7">${n}</small></button>`;
   }).join('');
   $$('button', box).forEach((b) => (b.onclick = () => { est.turno = b.dataset.t; est.marcas = {}; desenharTurnos(); desenhar(); }));
@@ -67,7 +79,7 @@ function jaLancado(a) {
 
 function desenhar() {
   const lista = $('#t-lista'); if (!lista) return;
-  previstas = aulasPrevistas(est.data, est.turno);
+  previstas = previstasDo(est.data, est.turno);
   const q = semAcento(est.busca.trim());
   const visiveis = previstas.filter((a) => !q || semAcento(`${a.prof} ${a.turma} ${a.disc} ${prof(a.professor_id)?.nome_completo || ''}`).includes(q));
   if (!previstas.length) {
